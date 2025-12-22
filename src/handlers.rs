@@ -848,16 +848,25 @@ pub async fn update_rating(
     Path(id): Path<i64>,
     Form(form): Form<RatingForm>,
 ) -> Result<impl IntoResponse, (axum::http::StatusCode, String)> {
-    sqlx::query(
-        "INSERT INTO ratings (recipe_id, rater_name, score) VALUES (?, ?, ?)
-         ON CONFLICT(recipe_id, rater_name) DO UPDATE SET score = excluded.score",
-    )
-    .bind(id)
-    .bind(form.rater_name)
-    .bind(form.score)
-    .execute(&pool)
-    .await
-    .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if form.score == 0 {
+        sqlx::query("DELETE FROM ratings WHERE recipe_id = ? AND rater_name = ?")
+            .bind(id)
+            .bind(form.rater_name)
+            .execute(&pool)
+            .await
+            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    } else {
+        sqlx::query(
+            "INSERT INTO ratings (recipe_id, rater_name, score) VALUES (?, ?, ?)
+             ON CONFLICT(recipe_id, rater_name) DO UPDATE SET score = excluded.score",
+        )
+        .bind(id)
+        .bind(form.rater_name)
+        .bind(form.score)
+        .execute(&pool)
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
 
     // Return empty success (for HTMX) or redirect
     Ok(axum::http::StatusCode::OK)

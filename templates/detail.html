@@ -185,8 +185,16 @@
                             star.addEventListener('click', () => {
                                 try {
                                     const val = parseInt(star.dataset.value);
-                                    saveRating(rater, val);
-                                    updateStars(container, val);
+                                    // If clicking the current score, toggle to 0 (delete)
+                                    // We need to fetch current visual state or store it better.
+                                    // Actually, let's just use the ratingsMap which stores the initial state,
+                                    // but we need the *current* state after updates.
+                                    // Let's attach current score to container dataset for easier access.
+                                    const currentScore = parseInt(container.dataset.currentScore || 0);
+                                    const newScore = (val === currentScore) ? 0 : val;
+
+                                    saveRating(rater, newScore);
+                                    updateStars(container, newScore);
                                 } catch (e) {
                                     console.error("Error clicking star", e);
                                 }
@@ -198,6 +206,7 @@
                 });
 
                 function updateStars(container, score) {
+                    container.dataset.currentScore = score;
                     const stars = container.querySelectorAll('.rating-star');
                     stars.forEach(star => {
                         const val = parseInt(star.dataset.value);
