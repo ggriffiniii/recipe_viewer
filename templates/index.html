@@ -32,41 +32,39 @@
         {% for item in recipes %}
         <li>
             <a href="/recipes/{{ item.recipe.id }}" class="block hover:bg-gray-50 transition duration-150 ease-in-out">
-                <div class="px-4 py-4 md:px-6 flex items-center justify-between">
-                    <div class="min-w-0 flex-1 flex items-center">
-                        <div class="min-w-0 flex-1 px-4 md:grid md:grid-cols-2 md:gap-4">
-                            <div>
-                                <div class="text-sm font-medium text-indigo-600 truncate">{{ item.recipe.title }}</div>
+                <div class="px-4 py-4 md:px-6 flex items-start md:items-center justify-between">
+                    <!-- Main Content Wrapper: Column on mobile, Row on desktop -->
+                    <div
+                        class="flex-1 min-w-0 flex flex-col md:flex-row md:items-center md:justify-between gap-y-2 md:gap-x-4">
 
-                            </div>
-                            <div class="hidden md:block">
-                                <div class="flex flex-wrap gap-2">
-                                    {% for tag in item.tags %}
-                                    <span
-                                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                        {{ tag.name }}
-                                    </span>
-                                    {% endfor %}
-                                    {% for rating in item.ratings %}
-                                    <span
-                                        class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-200">
-                                        {{ rating.rater_name.chars().next().unwrap_or('?') }} {{ rating.score }}★
-                                    </span>
-                                    {% endfor %}
-                                </div>
-                            </div>
+                        <!-- Title (Truncated) -->
+                        <div class="min-w-0">
+                            <div class="text-sm font-medium text-indigo-600 truncate">{{ item.recipe.title }}</div>
                         </div>
-                    </div>
-                    <div>
-                        <!-- Mobile tags view if needed or just arrow -->
-                        <div class="md:hidden flex flex-wrap gap-1 mt-2">
+
+                        <!-- Metadata (Ratings + Tags) -->
+                        <!-- Displays below title on mobile, to the right on desktop -->
+                        <div class="flex flex-wrap gap-2 items-center">
+                            <!-- Ratings First -->
+                            {% for rating in item.ratings %}
+                            <span
+                                class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-200">
+                                {{ rating.rater_name.chars().next().unwrap_or('?') }} {{ rating.score }}★
+                            </span>
+                            {% endfor %}
+
+                            <!-- Tags Second -->
                             {% for tag in item.tags %}
                             <span
-                                class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                 {{ tag.name }}
                             </span>
                             {% endfor %}
                         </div>
+                    </div>
+
+                    <!-- Chevron -->
+                    <div class="ml-4 flex-shrink-0 self-center">
                         <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"
                             fill="currentColor" aria-hidden="true">
                             <path fill-rule="evenodd"

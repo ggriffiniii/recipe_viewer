@@ -817,24 +817,53 @@ pub async fn delete_recipe(
         return Redirect::to("/").into_response();
     }
 
-    // Dependencies should be handled by foreign keys ideally, but just in case
-    let _ = sqlx::query("DELETE FROM ingredients WHERE revision_id IN (SELECT id FROM revisions WHERE recipe_id = ?)")
-        .bind(id)
-        .execute(&pool)
-        .await;
-    let _ = sqlx::query("DELETE FROM recipe_tags WHERE recipe_id = ?")
-        .bind(id)
-        .execute(&pool)
-        .await;
-    let _ = sqlx::query("DELETE FROM recipes WHERE id = ?")
-        .bind(id)
-        .execute(&pool)
-        .await;
+    // Use a transaction to ensure all or nothing
+    let mut tx = pool.begin().await.unwrap();
 
-    // Check headers for HTMX or just redirect?
-    // HTMX DELETE often expects a specific response or uses hx-target.
-    // Redirecting to root is fine.
-    Redirect::to("/").into_response()
+    // 1. Delete Ingredients (depend on revisions)
+    sqlx::query("DELETE FROM ingredients WHERE revision_id IN (SELECT id FROM revisions WHERE recipe_id = ?)")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+    // 2. Delete Revisions (depend on recipes)
+    sqlx::query("DELETE FROM revisions WHERE recipe_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+    // 3. Delete Ratings (depend on recipes)
+    sqlx::query("DELETE FROM ratings WHERE recipe_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+    // 4. Delete Recipe Tags (depend on recipes)
+    sqlx::query("DELETE FROM recipe_tags WHERE recipe_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+    // 5. Delete Recipe (root)
+    sqlx::query("DELETE FROM recipes WHERE id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+    tx.commit().await.unwrap();
+
+    // Use HX-Redirect to force a client-side redirect to the homepage.
+    // This allows HTMX to handle the navigation cleanly.
+    ([(
+        axum::http::header::HeaderName::from_static("hx-redirect"),
+        axum::http::HeaderValue::from_static("/"),
+    )])
+    .into_response()
 }
 
 #[derive(Deserialize)]
