@@ -1,0 +1,7 @@
+/target
+.env
+.secrets
+.git
+.idea
+.vscode
+*.ds_store

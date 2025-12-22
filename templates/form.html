@@ -1,0 +1,264 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow">
+    <h1 class="text-2xl font-bold mb-6 text-gray-900">{% if is_edit %}Edit Recipe{% else %}New Recipe{% endif %}</h1>
+
+    <form action="{% if is_edit %}/recipes/{{ recipe.as_ref().unwrap().id }}{% else %}/recipes{% endif %}" method="post"
+        class="space-y-6">
+        <div>
+            <label for="title" class="block text-sm font-medium text-gray-700">Title</label>
+            <input type="text" name="title" id="title" required
+                value="{% if is_edit %}{{ recipe.as_ref().unwrap().title }}{% endif %}"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border">
+        </div>
+
+        <div>
+            <label for="url" class="block text-sm font-medium text-gray-700">Source URL (Optional)</label>
+            <input type="url" name="url" id="url"
+                value="{% if is_edit %}{% if let Some(url) = recipe.as_ref().unwrap().url %}{{ url }}{% endif %}{% endif %}"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border">
+        </div>
+
+        <div>
+            <label for="overview" class="block text-sm font-medium text-gray-700">Overview (Optional)</label>
+            <textarea name="overview" id="overview" rows="3"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border">{% if is_edit %}{% if let Some(overview) = recipe.as_ref().unwrap().overview %}{{ overview }}{% endif %}{% endif %}</textarea>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700">Ingredients (One per line)</label>
+            <p class="text-xs text-gray-500 mb-2">Format: "Quantity Unit Name" (e.g. "1 cup Flour")</p>
+            <textarea name="ingredients_text" id="ingredients_text" rows="5"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border">{% if is_edit %}{% for ingredient in ingredients %}{% if let Some(q) = ingredient.quantity %}{{ q }} {% endif %}{% if let Some(unit) = ingredient.unit %}{{ unit }} {% endif %}{{ ingredient.name }}&#10;{% endfor %}{% endif %}</textarea>
+        </div>
+
+        <div>
+            <label for="instructions" class="block text-sm font-medium text-gray-700">Instructions (Optional)</label>
+            <textarea name="instructions" id="instructions" rows="10"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border">{% if is_edit %}{% if let Some(instr) = recipe.as_ref().unwrap().instructions %}{{ instr }}{% endif %}{% endif %}</textarea>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700">Tags</label>
+            <p class="text-xs text-gray-500 mb-2">Type and press Enter or Comma to add tags</p>
+
+            <div class="relative">
+                <div id="tags-container"
+                    class="mt-1 flex flex-wrap gap-2 p-2 border border-gray-300 rounded-md bg-white min-h-[42px] focus-within:ring-1 focus-within:ring-indigo-500 focus-within:border-indigo-500 shadow-sm">
+                    <!-- Badges will be inserted here -->
+                    <input type="text" id="tag-input"
+                        class="flex-grow min-w-[120px] outline-none border-none focus:ring-0 p-0 text-sm"
+                        placeholder="Add a tag..." autocomplete="off">
+                </div>
+                <!-- Dropdown -->
+                <div id="tag-dropdown"
+                    class="absolute z-10 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm hidden">
+                    <!-- Options will be inserted here -->
+                </div>
+            </div>
+
+            <!-- Hidden input to store the actual value sent to server -->
+            <input type="hidden" name="tags_text" id="tags_text"
+                value="{% if is_edit %}{% for tag in tags %}{{ tag.name }}{% if !loop.last %}, {% endif %}{% endfor %}{% endif %}">
+        </div>
+
+        <script>
+            // Available tags from server, ordered by popularity
+            const AVAILABLE_TAGS = [
+                {% for tag in all_tags %}"{{ tag }}"{% if !loop.last %}, {% endif %} {% endfor %}
+            ];
+
+            document.addEventListener('DOMContentLoaded', () => {
+                const container = document.getElementById('tags-container');
+                const input = document.getElementById('tag-input');
+                const hiddenInput = document.getElementById('tags_text');
+                const dropdown = document.getElementById('tag-dropdown');
+
+                // Initialize tags from the server-rendered value
+                let tags = hiddenInput.value.split(',')
+                    .map(t => t.trim())
+                    .filter(t => t.length > 0);
+
+                let selectedIndex = -1;
+
+                function updateHiddenInput() {
+                    hiddenInput.value = tags.join(', ');
+                }
+
+                function createBadge(text) {
+                    const span = document.createElement('span');
+                    span.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800';
+                    span.innerHTML = `
+                        ${text}
+                        <button type="button" class="ml-1.5 inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-indigo-400 hover:bg-indigo-200 hover:text-indigo-500 focus:bg-indigo-500 focus:text-white focus:outline-none">
+                            <span class="sr-only">Remove large option</span>
+                            <svg class="h-2 w-2" stroke="currentColor" fill="none" viewBox="0 0 8 8">
+                                <path stroke-linecap="round" stroke-width="1.5" d="M1 1l6 6m0-6L1 7" />
+                            </svg>
+                        </button>
+                    `;
+
+                    // Remove handler
+                    span.querySelector('button').addEventListener('click', () => {
+                        tags = tags.filter(t => t !== text);
+                        updateHiddenInput();
+                        span.remove();
+                    });
+
+                    return span;
+                }
+
+                function renderTags() {
+                    // Clear existing badges (keep input)
+                    const badges = container.querySelectorAll('span');
+                    badges.forEach(b => b.remove());
+
+                    // Add badges before the input
+                    tags.forEach(tag => {
+                        container.insertBefore(createBadge(tag), input);
+                    });
+                }
+
+                // Dropdown logic
+                function renderDropdown(filterText) {
+                    dropdown.innerHTML = '';
+                    let matches = [];
+
+                    if (!filterText) {
+                        // Top 10 popular tags if input is empty
+                        matches = AVAILABLE_TAGS.filter(t => !tags.includes(t)).slice(0, 10);
+                    } else {
+                        const lowerFilter = filterText.toLowerCase();
+                        matches = AVAILABLE_TAGS
+                            .filter(t => t.toLowerCase().includes(lowerFilter) && !tags.includes(t))
+                            .slice(0, 10); // Limit to top 10 matches
+                    }
+
+                    if (matches.length > 0) {
+                        matches.forEach((tag, index) => {
+                            const div = document.createElement('div');
+                            div.className = 'cursor-default select-none relative py-2 pl-3 pr-9 hover:bg-indigo-600 hover:text-white text-gray-900';
+                            div.textContent = tag;
+                            div.dataset.index = index;
+
+                            div.addEventListener('mousedown', (e) => {
+                                e.preventDefault(); // Prevent blur
+                                addTag(tag);
+                            });
+
+                            dropdown.appendChild(div);
+                        });
+                        dropdown.classList.remove('hidden');
+                        selectedIndex = -1;
+                    } else {
+                        dropdown.classList.add('hidden');
+                    }
+                }
+
+                function addTag(tag) {
+                    if (tag && !tags.includes(tag)) {
+                        tags.push(tag);
+                        updateHiddenInput();
+                        container.insertBefore(createBadge(tag), input);
+                        input.value = '';
+                        dropdown.classList.add('hidden');
+                        selectedIndex = -1;
+                    }
+                    input.focus();
+                }
+
+                function highlightOption(index) {
+                    const options = dropdown.children;
+                    for (let i = 0; i < options.length; i++) {
+                        if (i === index) {
+                            options[i].classList.add('bg-indigo-600', 'text-white');
+                            options[i].classList.remove('text-gray-900');
+                        } else {
+                            options[i].classList.remove('bg-indigo-600', 'text-white');
+                            options[i].classList.add('text-gray-900');
+                        }
+                    }
+                }
+
+                // Initial render
+                renderTags();
+
+                // Input handling
+                input.addEventListener('input', () => {
+                    renderDropdown(input.value.trim());
+                });
+
+                input.addEventListener('focus', () => {
+                    renderDropdown(input.value.trim());
+                });
+
+                input.addEventListener('blur', () => {
+                    // Delay hiding to allow click event to register
+                    setTimeout(() => {
+                        dropdown.classList.add('hidden');
+                    }, 200);
+                });
+
+                input.addEventListener('keydown', (e) => {
+                    const options = dropdown.children;
+
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        if (dropdown.classList.contains('hidden')) {
+                            renderDropdown(input.value.trim());
+                        } else if (options.length > 0) {
+                            selectedIndex = (selectedIndex + 1) % options.length;
+                            highlightOption(selectedIndex);
+                        }
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        if (dropdown.classList.contains('hidden')) {
+                            renderDropdown(input.value.trim());
+                        } else if (options.length > 0) {
+                            selectedIndex = (selectedIndex - 1 + options.length) % options.length;
+                            highlightOption(selectedIndex);
+                        }
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (!dropdown.classList.contains('hidden') && selectedIndex >= 0 && selectedIndex < options.length) {
+                            // Select from dropdown
+                            addTag(options[selectedIndex].textContent);
+                        } else {
+                            // Try to add what's typed
+                            const val = input.value.trim();
+                            if (val) {
+                                addTag(val);
+                            }
+                        }
+                    } else if (e.key === ',') {
+                        e.preventDefault();
+                        const val = input.value.trim();
+                        if (val) {
+                            addTag(val);
+                        }
+                    } else if (e.key === 'Backspace' && input.value === '' && tags.length > 0) {
+                        // Remove last tag on backspace if input is empty
+                        tags.pop();
+                        updateHiddenInput();
+                        renderTags();
+                        dropdown.classList.add('hidden');
+                    }
+                });
+
+                // Focus styling
+                container.addEventListener('click', () => {
+                    input.focus();
+                });
+            });
+        </script>
+
+        <div class="flex justify-end space-x-3">
+            <a href="{% if is_edit %}/recipes/{{ recipe.as_ref().unwrap().id }}{% else %}/{% endif %}"
+                class="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</a>
+            <button type="submit"
+                class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">Save</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

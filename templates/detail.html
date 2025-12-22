@@ -1,0 +1,453 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="mb-6 flex justify-between items-center">
+        <div>
+            <div class="flex items-center space-x-3">
+                <h1 class="text-3xl font-bold text-gray-900">{{ recipe.title }}</h1>
+                <span
+                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                    Rev {{ recipe.revision_number }}
+                </span>
+            </div>
+            {% if let Some(url) = recipe.url %}
+            <a href="{{ url }}" target="_blank"
+                class="text-sm text-indigo-600 hover:text-indigo-800 hover:underline">Source</a>
+            {% endif %}
+
+            {% if !revisions.is_empty() %}
+            <div class="mt-2 flex items-center space-x-2 text-sm text-gray-500">
+                <span>History:</span>
+                <div class="flex flex-wrap gap-1">
+                    {% for (rev_num, rev_date) in revisions %}
+                    <a href="/recipes/{{ recipe.id }}/versions/{{ rev_num }}" title="{{ rev_date }}"
+                        class="px-2 py-0.5 rounded text-xs border {% if *rev_num == recipe.revision_number %}bg-indigo-600 text-white border-indigo-600{% else %}bg-white text-gray-700 border-gray-300 hover:bg-gray-50{% endif %}">
+                        {{ rev_num }}
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        <div class="space-x-2">
+            {% if user.is_some() %}
+            <a href="/recipes/{{ recipe.id }}/edit"
+                class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">Edit</a>
+            <button hx-delete="/recipes/{{ recipe.id }}" hx-confirm="Are you sure?" hx-target="body"
+                class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 pointer-cursor">Delete</button>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if let Some(overview) = recipe.overview %}
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
+        <div class="px-4 py-5 sm:px-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">Overview</h3>
+        </div>
+        <div class="border-t border-gray-200 px-4 py-5 sm:p-6">
+            <p class="text-gray-700 whitespace-pre-wrap">{{ overview }}</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
+        <div class="px-4 py-5 sm:px-6 flex justify-between items-center">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">Ingredients</h3>
+            <div class="flex items-center space-x-2 text-sm">
+                <span class="text-gray-500">Scale:</span>
+                <div class="space-x-1">
+                    <a href="?scale=0.5"
+                        class="px-2 py-1 rounded border {% if scale == 0.5 %}bg-indigo-100 text-indigo-700{% else %}text-gray-600 hover:bg-gray-50{% endif %}">0.5x</a>
+                    <a href="?scale=1.0"
+                        class="px-2 py-1 rounded border {% if scale == 1.0 %}bg-indigo-100 text-indigo-700{% else %}text-gray-600 hover:bg-gray-50{% endif %}">1x</a>
+                    <a href="?scale=2.0"
+                        class="px-2 py-1 rounded border {% if scale == 2.0 %}bg-indigo-100 text-indigo-700{% else %}text-gray-600 hover:bg-gray-50{% endif %}">2x</a>
+                </div>
+                <form action="" method="get" class="flex items-center">
+                    <input type="number" name="scale" value="{{ scale }}" step="0.1" min="0.1"
+                        class="w-16 px-2 py-1 text-sm border rounded focus:ring-indigo-500 focus:border-indigo-500"
+                        placeholder="Custom">
+                    <button type="submit"
+                        class="ml-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 border rounded text-xs text-gray-600">Go</button>
+                </form>
+            </div>
+        </div>
+        <div class="border-t border-gray-200">
+            <ul class="divide-y divide-gray-200">
+                {% for ingredient in ingredients %}
+                <li class="px-4 py-4">
+                    {% if let Some(qty) = ingredient.display_quantity(*scale) %}
+                    <span class="font-bold text-gray-900 text-lg">{{ qty }}</span>
+                    {% endif %}
+                    {% if let Some(unit) = ingredient.unit %}
+                    {% if let Some(q) = ingredient.quantity %}
+                    <span class="text-gray-600 italic">{{ self.pluralize_unit(unit, q * scale) }}</span>
+                    {% else %}
+                    <span class="text-gray-600 italic">{{ unit }}</span>
+                    {% endif %}
+                    {% endif %}
+                    <span class="text-gray-900 ml-2">{{ ingredient.name }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+
+    {% if let Some(instructions) = recipe.instructions %}
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
+        <div class="px-4 py-5 sm:px-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">Instructions</h3>
+        </div>
+        <div class="border-t border-gray-200 px-4 py-5 sm:p-6">
+            <p class="whitespace-pre-wrap text-gray-700">{{ instructions }}</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
+        <div class="px-4 py-5 sm:px-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">Household Ratings</h3>
+        </div>
+        <div class="border-t border-gray-200 px-4 py-5 sm:p-6">
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                {% for name in ["Glenn", "Carol", "Mackenzie"] %}
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <div class="font-medium text-gray-900 mb-2">{{ name }}</div>
+                    <div class="flex items-center space-x-1 rating-container" data-rater="{{ name }}">
+                        {% let current_score = 0 %}
+                        {% for r in ratings %}
+                        {% if r.rater_name.eq_ignore_ascii_case(name) %}
+                        {% let current_score = r.score %}
+                        {% endif %}
+                        {% endfor %}
+
+                        {# Logic to find score is tricky in pure Jinja loop scope, so we use JS for interactivity
+                        mainly,
+                        but for server-side rendering we need to find the rating.
+                        Askama variable scoping is limited. A better way: filter in Rust or use JS to set explicit
+                        state.
+                        Actually, efficient standard approach: define a var. But reassignment in loop is hard.
+                        Workaround: Render dataset attribute on container, let JS highlight.
+                        OR: Use a helper method or improved data structure map.
+                        Given limitations, I'll pass ratings as a Map or just find it in JS if array is small?
+                        Array is small. I'll pass simple list and formatting logic.
+                        Wait, Askama doesn't support assignment easily.
+                        I will render the score in a hidden attribute and use JS to init the stars.
+                        #}
+
+                        {% let score = 0 %}
+                        {% for r in ratings %}
+                        {% if r.rater_name.to_lowercase() == name.to_lowercase() %}
+                        {% let score = r.score %}
+                        {# This assignment won't leak out of scope in some engines. In Askama it might not work as
+                        expected if `let` shadows.
+                        Actually, simple solution: render all ratings to a JS object and init. #}
+                        {% endif %}
+                        {% endfor %}
+
+                        {% for i in [1, 2, 3, 4, 5] %}
+                        <button type="button" class="rating-star focus:outline-none text-2xl" data-value="{{ i }}">
+                            ☆
+                        </button>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            <script>
+                (function () {
+                    try {
+                        const ratingsList = [
+                            {% for r in ratings %}
+                            { name: "{{ r.rater_name }}", score: Number({{ r.score }})
+                },
+                    {% endfor %}
+                        ];
+
+                const ratingsMap = {};
+                ratingsList.forEach(item => {
+                    if (item.name) {
+                        ratingsMap[item.name.toLowerCase()] = item.score;
+                    }
+                });
+
+                const containers = document.querySelectorAll('.rating-container');
+
+                containers.forEach(container => {
+                    try {
+                        const rater = container.dataset.rater;
+                        const score = ratingsMap[rater.toLowerCase()] || 0;
+                        updateStars(container, score);
+
+                        const stars = container.querySelectorAll('.rating-star');
+                        stars.forEach(star => {
+                            star.addEventListener('click', () => {
+                                try {
+                                    const val = parseInt(star.dataset.value);
+                                    saveRating(rater, val);
+                                    updateStars(container, val);
+                                } catch (e) {
+                                    console.error("Error clicking star", e);
+                                }
+                            });
+                        });
+                    } catch (e) {
+                        console.error("Error processing container", container, e);
+                    }
+                });
+
+                function updateStars(container, score) {
+                    const stars = container.querySelectorAll('.rating-star');
+                    stars.forEach(star => {
+                        const val = parseInt(star.dataset.value);
+                        if (isNaN(val)) return;
+
+                        const isFilled = val <= score;
+                        star.textContent = isFilled ? '★' : '☆';
+
+                        if (isFilled) {
+                            star.classList.add('text-yellow-400');
+                            star.classList.remove('text-gray-300');
+                        } else {
+                            star.classList.remove('text-yellow-400');
+                            star.classList.add('text-gray-300');
+                        }
+                    });
+                }
+
+                function saveRating(rater, score) {
+                    const params = new URLSearchParams();
+                    params.append('rater_name', rater);
+                    params.append('score', score);
+
+                    fetch('/recipes/{{ recipe.id }}/ratings', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: params
+                    }).then(res => {
+                        if (!res.ok) console.error("Failed to save rating");
+                    })
+                        .catch(err => console.error('Error saving rating:', err));
+                }
+                    } catch (e) {
+                    console.error("Global ratings script error", e);
+                }
+                }) ();
+            </script>
+        </div>
+    </div>
+
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+        <div class="px-4 py-5 sm:px-6 flex justify-between items-center">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">Tags</h3>
+            {% if user.is_some() %}
+            <span class="text-xs text-gray-500">Edit tags below</span>
+            {% endif %}
+        </div>
+        <div class="border-t border-gray-200 px-4 py-5 sm:p-6">
+            {% if user.is_some() %}
+            <div class="relative mb-3">
+                <div id="tags-container"
+                    class="mt-1 flex flex-wrap gap-2 p-2 border border-gray-300 rounded-md bg-white min-h-[42px] focus-within:ring-1 focus-within:ring-indigo-500 focus-within:border-indigo-500 shadow-sm">
+                    <input type="text" id="tag-input"
+                        class="flex-grow min-w-[120px] outline-none border-none focus:ring-0 p-0 text-sm"
+                        placeholder="Add a tag..." autocomplete="off">
+                </div>
+                <div id="tag-dropdown"
+                    class="absolute z-10 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm hidden">
+                </div>
+            </div>
+
+            <input type="hidden" name="tags_text" id="tags_text"
+                value="{% for tag in tags %}{{ tag.name }}{% if !loop.last %}, {% endif %}{% endfor %}">
+
+            <script>
+                const AVAILABLE_TAGS = [
+                    {% for tag in all_tags %}"{{ tag }}"{% if !loop.last %}, {% endif %} {% endfor %}
+                ];
+
+                document.addEventListener('DOMContentLoaded', () => {
+                    const container = document.getElementById('tags-container');
+                    const input = document.getElementById('tag-input');
+                    const hiddenInput = document.getElementById('tags_text');
+                    const dropdown = document.getElementById('tag-dropdown');
+
+                    let tags = hiddenInput.value.split(',')
+                        .map(t => t.trim())
+                        .filter(t => t.length > 0);
+
+                    let selectedIndex = -1;
+
+                    function saveTags() {
+                        const tagsText = tags.join(', ');
+                        hiddenInput.value = tagsText;
+
+                        // Send updates to server
+                        const params = new URLSearchParams();
+                        params.append('tags_text', tagsText);
+
+                        fetch('/recipes/{{ recipe.id }}/tags', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                            },
+                            body: params
+                        }).then(response => {
+                            if (!response.ok) {
+                                console.error('Failed to save tags');
+                                // Optional: show error feedback
+                            }
+                        }).catch(error => {
+                            console.error('Error saving tags:', error);
+                        });
+                    }
+
+                    function createBadge(text) {
+                        const span = document.createElement('span');
+                        span.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800';
+                        span.innerHTML = `
+                            ${text}
+                            <button type="button" class="ml-1.5 inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-indigo-400 hover:bg-indigo-200 hover:text-indigo-500 focus:bg-indigo-500 focus:text-white focus:outline-none">
+                                <svg class="h-2 w-2" stroke="currentColor" fill="none" viewBox="0 0 8 8">
+                                    <path stroke-linecap="round" stroke-width="1.5" d="M1 1l6 6m0-6L1 7" />
+                                </svg>
+                            </button>
+                        `;
+
+                        span.querySelector('button').addEventListener('click', () => {
+                            tags = tags.filter(t => t !== text);
+                            saveTags();
+                            span.remove();
+                        });
+
+                        return span;
+                    }
+
+                    function renderTags() {
+                        const badges = container.querySelectorAll('span');
+                        badges.forEach(b => b.remove());
+                        tags.forEach(tag => {
+                            container.insertBefore(createBadge(tag), input);
+                        });
+                    }
+
+                    function renderDropdown(filterText) {
+                        dropdown.innerHTML = '';
+                        let matches = [];
+
+                        if (!filterText) {
+                            matches = AVAILABLE_TAGS.filter(t => !tags.includes(t)).slice(0, 10);
+                        } else {
+                            const lowerFilter = filterText.toLowerCase();
+                            matches = AVAILABLE_TAGS
+                                .filter(t => t.toLowerCase().includes(lowerFilter) && !tags.includes(t))
+                                .slice(0, 10);
+                        }
+
+                        if (matches.length > 0) {
+                            matches.forEach((tag, index) => {
+                                const div = document.createElement('div');
+                                div.className = 'cursor-default select-none relative py-2 pl-3 pr-9 hover:bg-indigo-600 hover:text-white text-gray-900';
+                                div.textContent = tag;
+                                div.addEventListener('mousedown', (e) => {
+                                    e.preventDefault();
+                                    addTag(tag);
+                                });
+                                dropdown.appendChild(div);
+                            });
+                            dropdown.classList.remove('hidden');
+                            selectedIndex = -1;
+                        } else {
+                            dropdown.classList.add('hidden');
+                        }
+                    }
+
+                    function addTag(tag) {
+                        if (tag && !tags.includes(tag)) {
+                            tags.push(tag);
+                            saveTags();
+                            container.insertBefore(createBadge(tag), input);
+                            input.value = '';
+                            dropdown.classList.add('hidden');
+                        }
+                        input.focus();
+                    }
+
+                    renderTags();
+
+                    input.addEventListener('input', () => renderDropdown(input.value.trim()));
+                    input.addEventListener('focus', () => renderDropdown(input.value.trim()));
+                    input.addEventListener('blur', () => setTimeout(() => dropdown.classList.add('hidden'), 200));
+
+                    function highlightOption(index) {
+                        const options = dropdown.children;
+                        for (let i = 0; i < options.length; i++) {
+                            if (i === index) {
+                                options[i].classList.add('bg-indigo-600', 'text-white');
+                                options[i].classList.remove('text-gray-900');
+                            } else {
+                                options[i].classList.remove('bg-indigo-600', 'text-white');
+                                options[i].classList.add('text-gray-900');
+                            }
+                        }
+                    }
+
+                    input.addEventListener('keydown', (e) => {
+                        const options = dropdown.children;
+
+                        if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            if (dropdown.classList.contains('hidden')) {
+                                renderDropdown(input.value.trim());
+                            } else if (options.length > 0) {
+                                selectedIndex = (selectedIndex + 1) % options.length;
+                                highlightOption(selectedIndex);
+                            }
+                        } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            if (dropdown.classList.contains('hidden')) {
+                                renderDropdown(input.value.trim());
+                            } else if (options.length > 0) {
+                                selectedIndex = (selectedIndex - 1 + options.length) % options.length;
+                                highlightOption(selectedIndex);
+                            }
+                        } else if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (!dropdown.classList.contains('hidden') && selectedIndex >= 0 && selectedIndex < options.length) {
+                                addTag(options[selectedIndex].textContent);
+                            } else {
+                                const val = input.value.trim();
+                                if (val) addTag(val);
+                            }
+                        } else if (e.key === ',') {
+                            e.preventDefault();
+                            const val = input.value.trim();
+                            if (val) addTag(val);
+                        } else if (e.key === 'Backspace' && input.value === '' && tags.length > 0) {
+                            tags.pop();
+                            saveTags();
+                            renderTags();
+                            dropdown.classList.add('hidden');
+                        }
+                    });
+
+                    container.addEventListener('click', () => input.focus());
+                });
+            </script>
+            {% else %}
+            <div class="flex flex-wrap gap-2">
+                {% for tag in tags %}
+                <span
+                    class="inline-flex items-center px-3 py-0.5 rounded-full text-sm font-medium bg-indigo-100 text-indigo-800">
+                    {{ tag.name }}
+                </span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
