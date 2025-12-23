@@ -88,6 +88,10 @@ async fn main() {
         .route("/recipes/{id}/tags", post(handlers::update_recipe_tags))
         .route("/recipes/{id}/ratings", post(handlers::update_rating))
         .route("/recipes/{id}/edit", get(handlers::edit_recipe_form))
+        .route(
+            "/recipes/{id}/convert",
+            get(handlers::convert_recipe_form).post(handlers::convert_recipe),
+        )
         .route("/auth/google", get(handlers::google_auth))
         .route("/auth/callback", get(handlers::google_auth_callback))
         .route("/logout", get(handlers::logout))

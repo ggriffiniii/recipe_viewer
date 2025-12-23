@@ -19,7 +19,9 @@ pub struct AuthRequest {
     state: String,
 }
 
-use crate::templates::{HtmlTemplate, RecipeDetailTemplate, RecipeListTemplate, RecipeWithTags};
+use crate::templates::{
+    HtmlTemplate, RecipeConvertTemplate, RecipeDetailTemplate, RecipeListTemplate, RecipeWithTags,
+};
 use sqlx::SqlitePool;
 
 #[derive(sqlx::FromRow)]
@@ -1017,4 +1019,181 @@ pub async fn update_recipe_tags(
 
     // Redirect back to detail page
     Redirect::to(&format!("/recipes/{}", id)).into_response()
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ConversionEntry {
+    pub factor: f64,
+    pub target_unit: String,
+    pub source_key: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ConversionSubmission {
+    pub factors: Vec<ConversionEntry>,
+}
+
+pub async fn convert_recipe_form(
+    State(pool): State<SqlitePool>,
+    Path(id): Path<i64>,
+    session: Session,
+) -> Result<Response, (axum::http::StatusCode, String)> {
+    let user: Option<SessionUser> = session.get("user").await.unwrap_or(None);
+    if user.is_none() {
+        return Ok(Redirect::to("/").into_response());
+    }
+
+    // Get recipe to display title etc
+    let recipe = sqlx::query_as::<_, crate::models::RecipeWithRevision>(
+        r#"
+        SELECT r.id, rev.id as revision_id, rev.revision_number, rev.title, rev.instructions, rev.url, rev.overview, r.created_at, rev.created_at as revision_created_at
+        FROM recipes r
+        JOIN revisions rev ON r.id = rev.recipe_id
+        WHERE r.id = ? AND rev.id = (
+             SELECT MAX(id) FROM revisions WHERE recipe_id = r.id
+        )
+        "#
+    )
+    .bind(id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .ok_or((axum::http::StatusCode::NOT_FOUND, "Recipe not found".to_string()))?;
+
+    // Get ingredients
+    let ingredients = sqlx::query_as::<_, crate::models::Ingredient>(
+        "SELECT * FROM ingredients WHERE revision_id = ?",
+    )
+    .bind(recipe.revision_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Filter and collect unique volumetric ingredients
+    let mut unique_items = std::collections::HashSet::new();
+    let mut display_items = Vec::new();
+
+    for ing in ingredients {
+        if let Some(unit) = ing.unit {
+            let u = normalize_unit(&unit);
+            match u.as_str() {
+                "cup" | "tbsp" | "tsp" | "oz" | "ml" | "l" | "pint" | "quart" | "gallon" => {
+                    let key = format!("{} {}", u, ing.name.trim());
+                    if unique_items.insert(key.clone()) {
+                        display_items.push(key);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    display_items.sort();
+
+    Ok(HtmlTemplate(RecipeConvertTemplate {
+        recipe,
+        ingredients: display_items,
+        user: user.map(|u| u.email),
+    })
+    .into_response())
+}
+
+pub async fn convert_recipe(
+    State(pool): State<SqlitePool>,
+    Path(id): Path<i64>,
+    session: Session,
+    Json(form): Json<ConversionSubmission>,
+) -> impl IntoResponse {
+    let user: Option<SessionUser> = session.get("user").await.unwrap_or(None);
+    if user.is_none() {
+        return Redirect::to("/").into_response();
+    }
+
+    // Prepare map for lookup: "unit name" -> (factor, target_unit)
+    let mut conversion_map = std::collections::HashMap::new();
+    for entry in form.factors {
+        conversion_map.insert(
+            entry.source_key.clone(),
+            (entry.factor, entry.target_unit.clone()),
+        );
+    }
+
+    // Fetch current recipe data to copy
+    let mut tx = pool.begin().await.unwrap();
+
+    let recipe = sqlx::query_as::<_, crate::models::RecipeWithRevision>(
+        r#"
+         SELECT r.id, rev.id as revision_id, rev.revision_number, rev.title, rev.instructions, rev.url, rev.overview, r.created_at, rev.created_at as revision_created_at
+         FROM recipes r
+         JOIN revisions rev ON r.id = rev.recipe_id
+         WHERE r.id = ? AND rev.id = (
+             SELECT MAX(id) FROM revisions WHERE recipe_id = r.id
+         )
+         "#
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await
+    .unwrap();
+
+    if let Some(r) = recipe {
+        let next_rev = r.revision_number + 1;
+
+        let new_rev_result = sqlx::query(
+            "INSERT INTO revisions (recipe_id, revision_number, title, instructions, url, overview) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(id)
+        .bind(next_rev)
+        .bind(&r.title)
+        .bind(&r.instructions)
+        .bind(&r.url)
+        .bind(&r.overview)
+        .execute(&mut *tx)
+        .await;
+
+        if let Ok(record) = new_rev_result {
+            let new_rev_id = record.last_insert_rowid();
+
+            // Fetch old ingredients
+            let old_ingredients = sqlx::query_as::<_, crate::models::Ingredient>(
+                "SELECT * FROM ingredients WHERE revision_id = ?",
+            )
+            .bind(r.revision_id)
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+
+            for ing in old_ingredients {
+                let mut new_qty = ing.quantity;
+                let mut new_unit = ing.unit.clone();
+
+                if let (Some(q), Some(u)) = (ing.quantity, &ing.unit) {
+                    let norm_u = normalize_unit(&u);
+                    let key = format!("{} {}", norm_u, ing.name.trim());
+
+                    if let Some((factor, target)) = conversion_map.get(&key) {
+                        new_qty = Some(q * factor);
+                        new_unit = Some(target.clone());
+                    }
+                }
+
+                let _ = sqlx::query("INSERT INTO ingredients (revision_id, name, quantity, unit) VALUES (?, ?, ?, ?)")
+                     .bind(new_rev_id)
+                     .bind(ing.name)
+                     .bind(new_qty)
+                     .bind(new_unit)
+                     .execute(&mut *tx)
+                     .await;
+            }
+
+            tx.commit().await.unwrap();
+            return Redirect::to(&format!("/recipes/{}", id)).into_response();
+        }
+    }
+
+    (
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        "Failed to convert recipe",
+    )
+        .into_response()
 }

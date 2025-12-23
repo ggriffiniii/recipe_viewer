@@ -70,6 +70,14 @@ pub struct RecipeFormTemplate {
     pub all_tags: Vec<String>,
 }
 
+#[derive(Template)]
+#[template(path = "convert.html")]
+pub struct RecipeConvertTemplate {
+    pub recipe: RecipeWithRevision,
+    pub ingredients: Vec<String>, // List of unique ingredient names/units to convert
+    pub user: Option<String>,
+}
+
 pub struct HtmlTemplate<T>(pub T);
 
 impl<T> IntoResponse for HtmlTemplate<T>
