@@ -1,3 +1,4 @@
+mod ai;
 mod handlers;
 mod models;
 mod search;
@@ -73,6 +74,7 @@ async fn main() {
         .route("/", get(handlers::list_recipes))
         .route("/recipes/new", get(handlers::create_recipe_form))
         .route("/recipes", post(handlers::create_recipe))
+        .route("/recipes/import", post(handlers::import_recipe))
         .route(
             "/recipes/{id}",
             get(handlers::recipe_detail)

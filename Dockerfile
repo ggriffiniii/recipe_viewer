@@ -33,9 +33,12 @@ FROM debian:bookworm-slim
 WORKDIR /app
 
 # Install runtime dependencies (sqlite3 for db interaction if needed, ca-certificates for ssl)
+# Install runtime dependencies including Chromium for headless_chrome
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     sqlite3 \
+    chromium \
+    fonts-liberation \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
