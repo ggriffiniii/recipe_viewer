@@ -513,15 +513,22 @@ pub async fn logout(session: Session) -> impl IntoResponse {
 }
 
 #[derive(Deserialize)]
-pub struct RecipeForm {
-    title: String,
-    instructions: String,
-    ingredients_text: String,
-    tags_text: String,
+pub struct IngredientInput {
+    pub quantity: Option<String>,
+    pub unit: Option<String>,
+    pub name: String,
+}
+
+#[derive(Deserialize)]
+pub struct RecipeCreatePayload {
+    pub title: String,
+    pub instructions: String,
+    pub ingredients: Vec<IngredientInput>,
+    pub tags: Vec<String>,
     #[serde(default)]
-    url: String,
+    pub url: String,
     #[serde(default)]
-    overview: String,
+    pub overview: String,
 }
 
 use crate::templates::RecipeFormTemplate;
@@ -582,43 +589,6 @@ fn parse_quantity(s: &str) -> Option<f64> {
     None
 }
 
-fn parse_ingredient_line(line: &str) -> Option<(Option<f64>, Option<String>, String)> {
-    let parts: Vec<&str> = line.split_whitespace().collect();
-    if parts.is_empty() {
-        return None;
-    }
-
-    let (quantity, rest_parts) = match parse_quantity(parts[0]) {
-        Some(q) => (Some(q), &parts[1..]),
-        None => (None, &parts[0..]),
-    };
-
-    if rest_parts.is_empty() {
-        if quantity.is_some() {
-            return Some((quantity, None, "Ingredient".to_string()));
-        }
-        return None;
-    }
-
-    let potential_unit = rest_parts[0];
-    let normalized = normalize_unit(potential_unit);
-    // basic check: name changed or in common unit list
-    let is_unit = normalized != potential_unit
-        || [
-            "cup", "cups", "oz", "lb", "lbs", "g", "kg", "ml", "l", "tsp", "tbsp",
-        ]
-        .contains(&normalized.as_str());
-
-    let (unit, name_parts) = if rest_parts.len() > 1 && is_unit {
-        (Some(normalized), &rest_parts[1..])
-    } else {
-        (None, &rest_parts[0..])
-    };
-
-    let name = name_parts.join(" ");
-    Some((quantity, unit, name))
-}
-
 pub async fn create_recipe_form(
     State(pool): State<SqlitePool>,
     session: Session,
@@ -646,7 +616,7 @@ pub async fn create_recipe_form(
 pub async fn create_recipe(
     State(pool): State<SqlitePool>,
     session: Session,
-    Form(form): Form<RecipeForm>,
+    Json(payload): Json<RecipeCreatePayload>,
 ) -> impl IntoResponse {
     let user: Option<SessionUser> = session.get("user").await.unwrap_or(None);
     if user.is_none() {
@@ -666,10 +636,10 @@ pub async fn create_recipe(
             let rev_result = sqlx::query("INSERT INTO revisions (recipe_id, revision_number, title, instructions, url, overview) VALUES (?, ?, ?, ?, ?, ?)")
                 .bind(recipe_id)
                 .bind(1) // First revision
-                .bind(&form.title)
-                .bind(if form.instructions.trim().is_empty() { None } else { Some(&form.instructions) })
-                .bind(if form.url.is_empty() { None } else { Some(&form.url) })
-                .bind(if form.overview.is_empty() { None } else { Some(&form.overview) })
+                .bind(&payload.title)
+                .bind(if payload.instructions.trim().is_empty() { None } else { Some(&payload.instructions) })
+                .bind(if payload.url.is_empty() { None } else { Some(&payload.url) })
+                .bind(if payload.overview.is_empty() { None } else { Some(&payload.overview) })
                 .execute(&mut *tx)
                 .await;
 
@@ -677,20 +647,22 @@ pub async fn create_recipe(
                 let revision_id = rev_record.last_insert_rowid();
 
                 // Parse and insert ingredients linked to revision
-                for line in form.ingredients_text.lines() {
-                    if let Some((quantity, unit, name)) = parse_ingredient_line(line) {
-                        let _ = sqlx::query("INSERT INTO ingredients (revision_id, name, quantity, unit) VALUES (?, ?, ?, ?)")
-                             .bind(revision_id)
-                             .bind(name)
-                             .bind(quantity)
-                             .bind(unit)
-                             .execute(&mut *tx)
-                             .await;
-                    }
+                // Insert structured ingredients
+                for ing in payload.ingredients {
+                    let quantity = ing.quantity.as_deref().and_then(parse_quantity);
+                    let unit = ing.unit.map(|u| normalize_unit(&u));
+
+                    let _ = sqlx::query("INSERT INTO ingredients (revision_id, name, quantity, unit) VALUES (?, ?, ?, ?)")
+                            .bind(revision_id)
+                            .bind(ing.name)
+                            .bind(quantity)
+                            .bind(unit)
+                            .execute(&mut *tx)
+                            .await;
                 }
 
-                // Parse and insert tags linked to recipe (identity)
-                for tag_name in form.tags_text.split(',') {
+                // Insert tags
+                for tag_name in payload.tags {
                     let tag_name = tag_name.trim();
                     if !tag_name.is_empty() {
                         let _ = sqlx::query("INSERT OR IGNORE INTO tags (name) VALUES (?)")
@@ -798,7 +770,7 @@ pub async fn update_recipe(
     State(pool): State<SqlitePool>,
     Path(id): Path<i64>,
     session: Session,
-    Form(form): Form<RecipeForm>,
+    Json(payload): Json<RecipeCreatePayload>,
 ) -> impl IntoResponse {
     let user: Option<SessionUser> = session.get("user").await.unwrap_or(None);
     if user.is_none() {
@@ -822,21 +794,21 @@ pub async fn update_recipe(
     )
     .bind(id)
     .bind(next_rev)
-    .bind(&form.title)
-    .bind(if form.instructions.trim().is_empty() {
+    .bind(&payload.title)
+    .bind(if payload.instructions.trim().is_empty() {
         None
     } else {
-        Some(&form.instructions)
+        Some(&payload.instructions)
     })
-    .bind(if form.url.is_empty() {
+    .bind(if payload.url.is_empty() {
         None
     } else {
-        Some(&form.url)
+        Some(&payload.url)
     })
-    .bind(if form.overview.is_empty() {
+    .bind(if payload.overview.is_empty() {
         None
     } else {
-        Some(&form.overview)
+        Some(&payload.overview)
     })
     .execute(&mut *tx)
     .await;
@@ -846,16 +818,17 @@ pub async fn update_recipe(
             let revision_id = record.last_insert_rowid();
 
             // Re-insert ingredients linked to new revision
-            for line in form.ingredients_text.lines() {
-                if let Some((quantity, unit, name)) = parse_ingredient_line(line) {
-                    let _ = sqlx::query("INSERT INTO ingredients (revision_id, name, quantity, unit) VALUES (?, ?, ?, ?)")
-                        .bind(revision_id)
-                        .bind(name)
-                        .bind(quantity)
-                        .bind(unit)
-                        .execute(&mut *tx)
-                        .await;
-                }
+            for ing in payload.ingredients {
+                let quantity = ing.quantity.as_deref().and_then(parse_quantity);
+                let unit = ing.unit.map(|u| normalize_unit(&u));
+
+                let _ = sqlx::query("INSERT INTO ingredients (revision_id, name, quantity, unit) VALUES (?, ?, ?, ?)")
+                    .bind(revision_id)
+                    .bind(ing.name)
+                    .bind(quantity)
+                    .bind(unit)
+                    .execute(&mut *tx)
+                    .await;
             }
 
             // Update tags (still linked to recipe_id, so wipe and replace)
@@ -864,7 +837,7 @@ pub async fn update_recipe(
                 .execute(&mut *tx)
                 .await;
 
-            for tag_name in form.tags_text.split(',') {
+            for tag_name in payload.tags {
                 let tag_name = tag_name.trim();
                 if !tag_name.is_empty() {
                     let _ = sqlx::query("INSERT OR IGNORE INTO tags (name) VALUES (?)")

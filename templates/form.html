@@ -4,7 +4,8 @@
 <div class="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow">
     <h1 class="text-2xl font-bold mb-6 text-gray-900">{% if is_edit %}Edit Recipe{% else %}New Recipe{% endif %}</h1>
 
-    <form action="{% if is_edit %}/recipes/{{ recipe.as_ref().unwrap().id }}{% else %}/recipes{% endif %}" method="post"
+    <form id="recipe-form"
+        action="{% if is_edit %}/recipes/{{ recipe.as_ref().unwrap().id }}{% else %}/recipes{% endif %}" method="post"
         class="space-y-6">
         <div>
             <label for="title" class="block text-sm font-medium text-gray-700">Title</label>
@@ -55,7 +56,7 @@
                 Add Ingredient
             </button>
 
-            <!-- Hidden input to store the actual value sent to server -->
+            <!-- Hidden input to store the actual value sent to server (legacy) / used for initialization -->
             <input type="hidden" name="ingredients_text" id="ingredients_text"
                 value="{% if is_edit %}{% for ingredient in ingredients %}{% if let Some(q) = ingredient.quantity %}{{ q }} {% endif %}{% if let Some(unit) = ingredient.unit %}{{ unit }} {% endif %}{{ ingredient.name }}&#10;{% endfor %}{% endif %}">
 
@@ -103,7 +104,7 @@
                 </div>
             </div>
 
-            <!-- Hidden input to store the actual value sent to server -->
+            <!-- Hidden input to store initialization value. New submission uses JSON, so this is just for init. -->
             <input type="hidden" name="tags_text" id="tags_text"
                 value="{% if is_edit %}{% for tag in tags %}{{ tag.name }}{% if !loop.last %}, {% endif %}{% endfor %}{% endif %}">
         </div>
@@ -127,173 +128,143 @@
 
                 let selectedIndex = -1;
 
-                function updateHiddenInput() {
-                    hiddenInput.value = tags.join(', ');
-                }
-
-                function createBadge(text) {
-                    const span = document.createElement('span');
-                    span.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800';
-                    span.innerHTML = `
-                        ${text}
-                        <button type="button" class="ml-1.5 inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-indigo-400 hover:bg-indigo-200 hover:text-indigo-500 focus:bg-indigo-500 focus:text-white focus:outline-none">
-                            <span class="sr-only">Remove large option</span>
-                            <svg class="h-2 w-2" stroke="currentColor" fill="none" viewBox="0 0 8 8">
-                                <path stroke-linecap="round" stroke-width="1.5" d="M1 1l6 6m0-6L1 7" />
-                            </svg>
-                        </button>
-                    `;
-
-                    // Remove handler
-                    span.querySelector('button').addEventListener('click', () => {
-                        tags = tags.filter(t => t !== text);
-                        updateHiddenInput();
-                        span.remove();
-                    });
-
-                    return span;
-                }
+                // Make removeTag distinct for global access if needed, or stick to closure with button binding
+                // Binding in creates span is cleaner.
 
                 function renderTags() {
-                    // Clear existing badges (keep input)
-                    const badges = container.querySelectorAll('span');
-                    badges.forEach(b => b.remove());
+                    // Remove existing badges (spans)
+                    const existingSpans = container.querySelectorAll('span.inline-flex');
+                    existingSpans.forEach(span => span.remove());
 
-                    // Add badges before the input
-                    tags.forEach(tag => {
-                        container.insertBefore(createBadge(tag), input);
-                    });
-                }
+                    // Create document fragment for new badges
+                    const fragment = document.createDocumentFragment();
 
-                // Dropdown logic
-                function renderDropdown(filterText) {
-                    dropdown.innerHTML = '';
-                    let matches = [];
-
-                    if (!filterText) {
-                        // Top 10 popular tags if input is empty
-                        matches = AVAILABLE_TAGS.filter(t => !tags.includes(t)).slice(0, 10);
-                    } else {
-                        const lowerFilter = filterText.toLowerCase();
-                        matches = AVAILABLE_TAGS
-                            .filter(t => t.toLowerCase().includes(lowerFilter) && !tags.includes(t))
-                            .slice(0, 10); // Limit to top 10 matches
-                    }
-
-                    if (matches.length > 0) {
-                        matches.forEach((tag, index) => {
-                            const div = document.createElement('div');
-                            div.className = 'cursor-default select-none relative py-2 pl-3 pr-9 hover:bg-indigo-600 hover:text-white text-gray-900';
-                            div.textContent = tag;
-                            div.dataset.index = index;
-
-                            div.addEventListener('mousedown', (e) => {
-                                e.preventDefault(); // Prevent blur
-                                addTag(tag);
-                            });
-
-                            dropdown.appendChild(div);
+                    tags.forEach((tag, index) => {
+                        const span = document.createElement('span');
+                        span.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800';
+                        span.innerHTML = `
+                            ${tag}
+                            <button type="button" class="ml-1 inline-flex items-center p-0.5 rounded-full text-indigo-400 hover:bg-indigo-200 hover:text-indigo-500 focus:outline-none">
+                                <span class="sr-only">Remove ${tag}</span>
+                                <svg class="h-2 w-2" stroke="currentColor" fill="none" viewBox="0 0 8 8">
+                                    <path stroke-linecap="round" stroke-width="1.5" d="M1 1l6 6m0-6L1 7" />
+                                </svg>
+                            </button>
+                        `;
+                        // Bind click
+                        span.querySelector('button').addEventListener('click', () => {
+                            tags.splice(index, 1);
+                            renderTags();
                         });
-                        dropdown.classList.remove('hidden');
-                        selectedIndex = -1;
-                    } else {
-                        dropdown.classList.add('hidden');
-                    }
+
+                        fragment.appendChild(span);
+                    });
+
+                    // Insert before input
+                    container.insertBefore(fragment, input);
+
+                    hiddenInput.value = tags.join(',');
                 }
 
                 function addTag(tag) {
+                    tag = tag.trim();
                     if (tag && !tags.includes(tag)) {
                         tags.push(tag);
-                        updateHiddenInput();
-                        container.insertBefore(createBadge(tag), input);
+                        renderTags();
                         input.value = '';
                         dropdown.classList.add('hidden');
                         selectedIndex = -1;
                     }
-                    input.focus();
                 }
 
-                function highlightOption(index) {
-                    const options = dropdown.children;
-                    for (let i = 0; i < options.length; i++) {
-                        if (i === index) {
-                            options[i].classList.add('bg-indigo-600', 'text-white');
-                            options[i].classList.remove('text-gray-900');
-                        } else {
-                            options[i].classList.remove('bg-indigo-600', 'text-white');
-                            options[i].classList.add('text-gray-900');
-                        }
-                    }
-                }
-
-                // Initial render
-                renderTags();
-
-                // Input handling
                 input.addEventListener('input', () => {
-                    renderDropdown(input.value.trim());
-                });
+                    const val = input.value.toLowerCase();
+                    dropdown.innerHTML = '';
+                    selectedIndex = -1;
 
-                input.addEventListener('focus', () => {
-                    renderDropdown(input.value.trim());
-                });
-
-                input.addEventListener('blur', () => {
-                    // Delay hiding to allow click event to register
-                    setTimeout(() => {
+                    if (!val) {
                         dropdown.classList.add('hidden');
-                    }, 200);
+                        return;
+                    }
+
+                    const filtered = AVAILABLE_TAGS.filter(t => t.toLowerCase().includes(val) && !tags.includes(t));
+
+                    if (filtered.length === 0) {
+                        dropdown.classList.add('hidden');
+                        return;
+                    }
+
+                    filtered.forEach((t, index) => {
+                        const div = document.createElement('div');
+                        div.className = 'cursor-pointer select-none py-2 pl-3 pr-9 hover:bg-indigo-600 hover:text-white text-gray-900';
+                        div.textContent = t;
+                        div.dataset.index = index;
+                        div.addEventListener('click', () => {
+                            addTag(t);
+                            input.focus();
+                        });
+                        dropdown.appendChild(div);
+                    });
+                    dropdown.classList.remove('hidden');
+                });
+
+                document.addEventListener('click', (e) => {
+                    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+                        dropdown.classList.add('hidden');
+                        selectedIndex = -1;
+                    }
                 });
 
                 input.addEventListener('keydown', (e) => {
-                    const options = dropdown.children;
+                    const items = dropdown.querySelectorAll('div');
 
                     if (e.key === 'ArrowDown') {
                         e.preventDefault();
-                        if (dropdown.classList.contains('hidden')) {
-                            renderDropdown(input.value.trim());
-                        } else if (options.length > 0) {
-                            selectedIndex = (selectedIndex + 1) % options.length;
-                            highlightOption(selectedIndex);
+                        if (!dropdown.classList.contains('hidden') && items.length > 0) {
+                            selectedIndex = (selectedIndex + 1) % items.length;
+                            updateSelection(items);
                         }
                     } else if (e.key === 'ArrowUp') {
                         e.preventDefault();
-                        if (dropdown.classList.contains('hidden')) {
-                            renderDropdown(input.value.trim());
-                        } else if (options.length > 0) {
-                            selectedIndex = (selectedIndex - 1 + options.length) % options.length;
-                            highlightOption(selectedIndex);
+                        if (!dropdown.classList.contains('hidden') && items.length > 0) {
+                            selectedIndex = (selectedIndex - 1 + items.length) % items.length;
+                            updateSelection(items);
                         }
                     } else if (e.key === 'Enter') {
                         e.preventDefault();
-                        if (!dropdown.classList.contains('hidden') && selectedIndex >= 0 && selectedIndex < options.length) {
-                            // Select from dropdown
-                            addTag(options[selectedIndex].textContent);
+                        if (!dropdown.classList.contains('hidden') && selectedIndex >= 0 && items[selectedIndex]) {
+                            items[selectedIndex].click();
                         } else {
-                            // Try to add what's typed
                             const val = input.value.trim();
                             if (val) {
                                 addTag(val);
                             }
                         }
-                    } else if (e.key === ',') {
-                        e.preventDefault();
-                        const val = input.value.trim();
-                        if (val) {
-                            addTag(val);
-                        }
                     } else if (e.key === 'Backspace' && input.value === '' && tags.length > 0) {
-                        // Remove last tag on backspace if input is empty
                         tags.pop();
-                        updateHiddenInput();
                         renderTags();
                         dropdown.classList.add('hidden');
+                    } else if (e.key === 'Escape') {
+                        dropdown.classList.add('hidden');
+                        selectedIndex = -1;
                     }
                 });
 
-                container.addEventListener('click', () => {
-                    input.focus();
-                });
+                function updateSelection(items) {
+                    items.forEach((item, index) => {
+                        if (index === selectedIndex) {
+                            item.classList.add('bg-indigo-600', 'text-white');
+                            item.classList.remove('text-gray-900');
+                            item.scrollIntoView({ block: 'nearest' });
+                        } else {
+                            item.classList.remove('bg-indigo-600', 'text-white');
+                            item.classList.add('text-gray-900');
+                        }
+                    });
+                }
+
+                renderTags();
+
 
                 // --- Ingredient Logic ---
                 const ingredientsContainer = document.getElementById('ingredients-container');
@@ -314,37 +285,11 @@
                         </button>
                     `;
 
-                    // Delete handler
                     row.querySelector('button').addEventListener('click', () => {
                         row.remove();
-                        syncIngredientsToHidden();
-                    });
-
-                    // Input change handler to sync
-                    row.querySelectorAll('input').forEach(input => {
-                        input.addEventListener('input', syncIngredientsToHidden);
                     });
 
                     return row;
-                }
-
-                function syncIngredientsToHidden() {
-                    const rows = ingredientsContainer.querySelectorAll('div.flex');
-                    const lines = [];
-                    rows.forEach(row => {
-                        const q = row.querySelector('.ing-qty').value.trim();
-                        const u = row.querySelector('.ing-unit').value.trim();
-                        const n = row.querySelector('.ing-name').value.trim();
-
-                        if (n) { // Only add if name is present
-                            let line = '';
-                            if (q) line += q + ' ';
-                            if (u) line += u + ' ';
-                            line += n;
-                            lines.push(line);
-                        }
-                    });
-                    ingredientsHiddenInput.value = lines.join('\n');
                 }
 
                 // Initial parse from hidden input (server rendered)
@@ -354,26 +299,17 @@
                         line = line.trim();
                         if (!line) return;
 
-                        // Simple heuristic parse for display: 
-                        // attempt to split headers "1 cup Flour" -> q=1, u=cup, n=Flour
-                        // This mirrors simple parsing logic or just puts whole thing in name if complex
-                        // For now, let's just dump it all in name if we can't easily split, or try a regex.
-                        // Actually, since we want to populate the fields, let's try a best-effort split.
-
                         // Regex: Start with optional number/fraction, optional unit, then rest is name
-                        // This matches the regex used in some backend parsers but simplified for JS
                         const match = line.match(/^([\d\/\.\-\s]+)?\s*(?:(cup|cups|tbsp|tsp|oz|lb|g|kg|ml|l|pinch|dash|clove|slice|can|tablespoon|teaspoon)[s]?\.?\s+)?(.*)$/i);
 
                         if (match) {
-                            // Correctly extracted from regex
                             const q = match[1] ? match[1].trim() : '';
                             const u = match[2] ? match[2].trim() : '';
                             const n = match[3] ? match[3].trim() : '';
                             ingredientsContainer.appendChild(createIngredientRow(q, u, n));
                         } else {
-                            // Fallback to simple split logic if regex fails
+                            // Fallback
                             const parts = line.split(/\s+/);
-                            // ... simple fallback logic ...
                             let qty = '';
                             let unit = '';
                             let name = '';
@@ -391,10 +327,8 @@
                             name = parts.slice(idx).join(' ');
                             ingredientsContainer.appendChild(createIngredientRow(qty, unit, name));
                         }
-
                     });
                 } else {
-                    // Start with 6 empty rows for convenience
                     for (let i = 0; i < 6; i++) {
                         ingredientsContainer.appendChild(createIngredientRow());
                     }
@@ -404,16 +338,14 @@
                     ingredientsContainer.appendChild(createIngredientRow());
                 });
 
-
-                // Auto-fill logic
+                // --- Auto-fill & Submission ---
                 const autoFillBtn = document.getElementById('auto-fill-btn');
                 const urlInput = document.getElementById('url');
                 const titleInput = document.getElementById('title');
                 const overviewInput = document.getElementById('overview');
-                // instructionsInput and importStatus are defined below in the original code, but we need them here or inside the listener
-                // We will rely on existing variable names if they are in scope, or re-select.
                 const instructionsInput = document.getElementById('instructions');
                 const importStatus = document.getElementById('import-status');
+                const form = document.getElementById('recipe-form');
 
                 autoFillBtn.addEventListener('click', async () => {
                     const url = urlInput.value.trim();
@@ -430,9 +362,7 @@
                     try {
                         const response = await fetch('/recipes/import', {
                             method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
+                            headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ url }),
                         });
 
@@ -442,21 +372,17 @@
                         }
 
                         const data = await response.json();
-
                         if (data.title) titleInput.value = data.title;
                         if (data.overview) overviewInput.value = data.overview;
 
                         if (data.ingredients && data.ingredients.length > 0) {
-                            // Clear existing
                             ingredientsContainer.innerHTML = '';
                             data.ingredients.forEach(ing => {
-                                // Provide default empty string if null
                                 const q = ing.quantity || '';
                                 const u = ing.unit || '';
                                 const n = ing.name || '';
                                 ingredientsContainer.appendChild(createIngredientRow(q, u, n));
                             });
-                            syncIngredientsToHidden();
                         }
 
                         if (data.instructions && data.instructions.length > 0) {
@@ -474,6 +400,61 @@
                         importStatus.classList.add('text-red-600');
                     } finally {
                         autoFillBtn.disabled = false;
+                    }
+                });
+
+                form.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+
+                    const title = titleInput.value.trim();
+                    const url = urlInput.value.trim();
+                    const overview = overviewInput.value.trim();
+                    const instructions = instructionsInput.value.trim();
+
+                    // Gather ingredients
+                    const ingredientRows = ingredientsContainer.querySelectorAll('div.flex');
+                    const ingredientsData = [];
+                    ingredientRows.forEach(row => {
+                        const q = row.querySelector('.ing-qty').value.trim();
+                        const u = row.querySelector('.ing-unit').value.trim();
+                        const n = row.querySelector('.ing-name').value.trim();
+
+                        if (n) { // Only add if name is present
+                            ingredientsData.push({
+                                quantity: q || null,
+                                unit: u || null,
+                                name: n
+                            });
+                        }
+                    });
+
+                    const payload = {
+                        title: title,
+                        instructions: instructions,
+                        ingredients: ingredientsData,
+                        tags: tags,
+                        url: url,
+                        overview: overview
+                    };
+
+                    try {
+                        const response = await fetch(form.action, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (response.ok) {
+                            window.location.href = response.url;
+                        } else {
+                            const text = await response.text();
+                            alert('Failed to save recipe: ' + text);
+                        }
+                    } catch (error) {
+                        console.error('Save error:', error);
+                        alert('Failed to save recipe: ' + error.message);
                     }
                 });
             });
