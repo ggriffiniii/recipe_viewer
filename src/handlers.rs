@@ -550,6 +550,7 @@ fn normalize_unit(u: &str) -> String {
         "tsp" | "t" | "teaspoon" | "teaspoons" => "tsp".to_string(),
         "tbsp" | "tbs" | "tbl" | "tablespoon" | "tablespoons" => "tbsp".to_string(),
         "c" | "cup" | "cups" => "cup".to_string(),
+        "fl oz" | "fluid oz" | "fluid ounce" | "fluid ounces" => "fl oz".to_string(),
         "oz" | "ounce" | "ounces" => "oz".to_string(),
         "lb" | "lbs" | "pound" | "pounds" => "lb".to_string(),
         "g" | "gram" | "grams" => "g".to_string(),
@@ -1026,6 +1027,25 @@ pub struct ConversionEntry {
     pub factor: f64,
     pub target_unit: String,
     pub source_key: String,
+    pub source_unit: String,
+    pub source_qty: f64,
+}
+
+// Helper to convert common units to ml
+fn to_ml(qty: f64, unit: &str) -> Option<f64> {
+    let u = normalize_unit(unit);
+    match u.as_str() {
+        "ml" | "milliliter" => Some(qty),
+        "l" | "liter" => Some(qty * 1000.0),
+        "tsp" | "teaspoon" => Some(qty * 4.92892),
+        "tbsp" | "tablespoon" => Some(qty * 14.7868),
+        "fl oz" => Some(qty * 29.5735),
+        "c" | "cup" => Some(qty * 236.588),
+        "pt" | "pint" => Some(qty * 473.176),
+        "qt" | "quart" => Some(qty * 946.353),
+        "gal" | "gallon" => Some(qty * 3785.41),
+        _ => None,
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -1074,13 +1094,13 @@ pub async fn convert_recipe_form(
     let mut display_items = Vec::new();
 
     for ing in ingredients {
-        if let Some(unit) = ing.unit {
+        if let (Some(unit), Some(qty)) = (ing.unit.clone(), ing.quantity) {
             let u = normalize_unit(&unit);
             match u.as_str() {
-                "cup" | "tbsp" | "tsp" | "oz" | "ml" | "l" | "pint" | "quart" | "gallon" => {
+                "cup" | "tbsp" | "tsp" | "fl oz" | "ml" | "l" | "pint" | "quart" | "gallon" => {
                     let key = format!("{} {}", u, ing.name.trim());
                     if unique_items.insert(key.clone()) {
-                        display_items.push(key);
+                        display_items.push((key, ing.name.clone(), unit, qty));
                     }
                 }
                 _ => {}
@@ -1088,7 +1108,7 @@ pub async fn convert_recipe_form(
         }
     }
 
-    display_items.sort();
+    display_items.sort_by(|a, b| a.0.cmp(&b.0));
 
     Ok(HtmlTemplate(RecipeConvertTemplate {
         recipe,
@@ -1114,7 +1134,12 @@ pub async fn convert_recipe(
     for entry in form.factors {
         conversion_map.insert(
             entry.source_key.clone(),
-            (entry.factor, entry.target_unit.clone()),
+            (
+                entry.factor,
+                entry.target_unit,
+                entry.source_qty,
+                entry.source_unit,
+            ),
         );
     }
 
@@ -1170,20 +1195,35 @@ pub async fn convert_recipe(
                 if let (Some(q), Some(u)) = (ing.quantity, &ing.unit) {
                     let norm_u = normalize_unit(&u);
                     let key = format!("{} {}", norm_u, ing.name.trim());
+                    // Need to match against the key we generated in the form
+                    // The form generated key using `normalize_unit(original_unit) + name`.
+                    // So if we have `1 cup flour`, key is `cup Flour`.
+                    // The conversion entry has this key.
 
-                    if let Some((factor, target)) = conversion_map.get(&key) {
-                        new_qty = Some(q * factor);
-                        new_unit = Some(target.clone());
+                    if let Some((rule_weight, target_unit, rule_src_qty, rule_src_unit)) =
+                        conversion_map.get(&key)
+                    {
+                        // Calculate density: rule_weight / rule_vol_ml
+                        if let (Some(ing_ml), Some(rule_ml)) =
+                            (to_ml(q, u), to_ml(*rule_src_qty, rule_src_unit))
+                        {
+                            if rule_ml > 0.0 {
+                                let density = rule_weight / rule_ml; // g/ml
+                                let final_weight = ing_ml * density;
+                                new_qty = Some(final_weight);
+                                new_unit = Some(target_unit.clone());
+                            }
+                        }
                     }
                 }
 
                 let _ = sqlx::query("INSERT INTO ingredients (revision_id, name, quantity, unit) VALUES (?, ?, ?, ?)")
-                     .bind(new_rev_id)
-                     .bind(ing.name)
-                     .bind(new_qty)
-                     .bind(new_unit)
-                     .execute(&mut *tx)
-                     .await;
+                .bind(new_rev_id)
+                .bind(ing.name)
+                .bind(new_qty)
+                .bind(new_unit)
+                .execute(&mut *tx)
+                .await;
             }
 
             tx.commit().await.unwrap();

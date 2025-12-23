@@ -74,7 +74,7 @@ pub struct RecipeFormTemplate {
 #[template(path = "convert.html")]
 pub struct RecipeConvertTemplate {
     pub recipe: RecipeWithRevision,
-    pub ingredients: Vec<String>, // List of unique ingredient names/units to convert
+    pub ingredients: Vec<(String, String, String, f64)>, // (key, name, unit, qty)
     pub user: Option<String>,
 }
 
