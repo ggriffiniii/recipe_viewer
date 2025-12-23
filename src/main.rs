@@ -89,6 +89,10 @@ async fn main() {
         .route("/recipes/{id}/ratings", post(handlers::update_rating))
         .route("/recipes/{id}/edit", get(handlers::edit_recipe_form))
         .route(
+            "/recipes/{id}/restore/{version}",
+            post(handlers::restore_recipe_revision),
+        )
+        .route(
             "/recipes/{id}/convert",
             get(handlers::convert_recipe_form).post(handlers::convert_recipe),
         )

@@ -28,6 +28,18 @@
                     {% endfor %}
                 </div>
             </div>
+
+            {% if let Some((latest_rev, _)) = revisions.first() %}
+            {% if *latest_rev > recipe.revision_number %}
+            <form action="/recipes/{{ recipe.id }}/restore/{{ recipe.revision_number }}" method="POST" class="mt-2">
+                <button type="submit"
+                    class="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded border border-yellow-200 hover:bg-yellow-200"
+                    onclick="return confirm('Restore this version as the new latest revision?')">
+                    Restore as Latest
+                </button>
+            </form>
+            {% endif %}
+            {% endif %}
             {% endif %}
         </div>
         <div class="flex items-center space-x-2">

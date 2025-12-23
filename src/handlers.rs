@@ -435,6 +435,88 @@ pub async fn recipe_revision_detail(
     })
 }
 
+pub async fn restore_recipe_revision(
+    State(pool): State<SqlitePool>,
+    Path((id, revision_number)): Path<(i64, i64)>,
+    session: Session,
+) -> Result<Response, (axum::http::StatusCode, String)> {
+    let user: Option<SessionUser> = session.get("user").await.unwrap_or(None);
+    if user.is_none() {
+        return Ok(Redirect::to("/").into_response());
+    }
+
+    // 1. Fetch the target revision to copy
+    let target_rev = sqlx::query_as::<_, crate::models::RecipeWithRevision>(
+        r#"
+         SELECT r.id, rev.id as revision_id, rev.revision_number, rev.title, rev.instructions, rev.url, rev.overview, r.created_at, rev.created_at as revision_created_at
+         FROM recipes r
+         JOIN revisions rev ON r.id = rev.recipe_id
+         WHERE r.id = ? AND rev.revision_number = ?
+         "#
+    )
+    .bind(id)
+    .bind(revision_number)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .ok_or((axum::http::StatusCode::NOT_FOUND, "Revision not found".to_string()))?;
+
+    // 2. Fetch current latest revision number
+    let latest_rev_num: i64 =
+        sqlx::query_scalar("SELECT MAX(revision_number) FROM revisions WHERE recipe_id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let new_rev_num = latest_rev_num + 1;
+
+    let mut tx = pool.begin().await.unwrap();
+
+    // 3. Create new revision with target data
+    let new_rev_result = sqlx::query(
+        "INSERT INTO revisions (recipe_id, revision_number, title, instructions, url, overview) VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(id)
+    .bind(new_rev_num)
+    .bind(&target_rev.title)
+    .bind(&target_rev.instructions)
+    .bind(&target_rev.url)
+    .bind(&target_rev.overview)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let new_rev_id = new_rev_result.last_insert_rowid();
+
+    // 4. Fetch target ingredients
+    let target_ingredients = sqlx::query_as::<_, crate::models::Ingredient>(
+        "SELECT * FROM ingredients WHERE revision_id = ?",
+    )
+    .bind(target_rev.revision_id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // 5. Insert new ingredients
+    for ing in target_ingredients {
+        sqlx::query(
+            "INSERT INTO ingredients (revision_id, name, quantity, unit) VALUES (?, ?, ?, ?)",
+        )
+        .bind(new_rev_id)
+        .bind(ing.name)
+        .bind(ing.quantity)
+        .bind(ing.unit)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+
+    tx.commit().await.unwrap();
+
+    Ok(Redirect::to(&format!("/recipes/{}", id)).into_response())
+}
+
 #[derive(Deserialize)]
 struct GoogleUserInfo {
     email: String,
