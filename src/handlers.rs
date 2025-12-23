@@ -138,67 +138,61 @@ pub async fn import_recipe(
     // Fetch the URL content using headless_chrome
     let browser_opts = headless_chrome::LaunchOptionsBuilder::default()
         .headless(true)
+        .sandbox(false)
+        .enable_logging(true)
         .build()
         .map_err(|e| {
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to build launch options: {}", e),
-            )
+            let msg = format!("Failed to build launch options: {}", e);
+            eprintln!("{}", msg);
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, msg)
         })?;
 
     // In a real app, you might want to reuse the browser instance or manage it in a pool.
     // For now, launching per request is simpler but slower.
     let browser = headless_chrome::Browser::new(browser_opts).map_err(|e| {
-        (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to launch browser: {}", e),
-        )
+        let msg = format!("Failed to launch browser: {}", e);
+        eprintln!("{}", msg);
+        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, msg)
     })?;
 
     let tab = browser.new_tab().map_err(|e| {
-        (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to create tab: {}", e),
-        )
+        let msg = format!("Failed to create tab: {}", e);
+        eprintln!("{}", msg);
+        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, msg)
     })?;
 
     tab.navigate_to(&payload.url).map_err(|e| {
-        (
-            axum::http::StatusCode::BAD_REQUEST,
-            format!("Failed to navigate to URL: {}", e),
-        )
+        let msg = format!("Failed to navigate to URL: {}", e);
+        eprintln!("{}", msg);
+        (axum::http::StatusCode::BAD_REQUEST, msg)
     })?;
 
     // Wait for network idle or some element?
     // Let's just wait for the body to be present and maybe a small delay or network idle
     tab.wait_until_navigated().map_err(|e| {
-        (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to wait for navigation: {}", e),
-        )
+        let msg = format!("Failed to wait for navigation: {}", e);
+        eprintln!("{}", msg);
+        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, msg)
     })?;
 
     // simple wait for body
     let _element = tab.wait_for_element("body").map_err(|e| {
-        (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to wait for body: {}", e),
-        )
+        let msg = format!("Failed to wait for body: {}", e);
+        eprintln!("{}", msg);
+        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, msg)
     })?;
 
     // Extract text from the body
     let body_element = tab.find_element("body").map_err(|e| {
-        (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to find body: {}", e),
-        )
+        let msg = format!("Failed to find body: {}", e);
+        eprintln!("{}", msg);
+        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, msg)
     })?;
 
     let text = body_element.get_inner_text().map_err(|e| {
-        (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to get text: {}", e),
-        )
+        let msg = format!("Failed to get text: {}", e);
+        eprintln!("{}", msg);
+        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, msg)
     })?;
 
     // Truncate to avoid excessive token usage if the page is massive (e.g. 100k chars ~ 25k tokens, safe specific to Gemini Flash 2.5 which has 1M context)
@@ -213,10 +207,9 @@ pub async fn import_recipe(
     let parsed = crate::ai::extract_recipe_from_text(&client, &api_key, truncated_text)
         .await
         .map_err(|e| {
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("AI extraction failed: {}", e),
-            )
+            let msg = format!("AI extraction failed: {}", e);
+            eprintln!("{}", msg);
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, msg)
         })?;
 
     Ok(Json(parsed))

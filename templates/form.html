@@ -40,10 +40,42 @@
         </div>
 
         <div>
-            <label class="block text-sm font-medium text-gray-700">Ingredients (One per line)</label>
-            <p class="text-xs text-gray-500 mb-2">Format: "Quantity Unit Name" (e.g. "1 cup Flour")</p>
-            <textarea name="ingredients_text" id="ingredients_text" rows="5"
-                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border">{% if is_edit %}{% for ingredient in ingredients %}{% if let Some(q) = ingredient.quantity %}{{ q }} {% endif %}{% if let Some(unit) = ingredient.unit %}{{ unit }} {% endif %}{{ ingredient.name }}&#10;{% endfor %}{% endif %}</textarea>
+            <label class="block text-sm font-medium text-gray-700">Ingredients</label>
+            <p class="text-xs text-gray-500 mb-2">Add ingredients with quantity, unit, and name.</p>
+
+            <div id="ingredients-container" class="space-y-2 mb-2">
+                <!-- Ingredient rows will be inserted here -->
+            </div>
+
+            <button type="button" id="add-ingredient-btn"
+                class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                <svg class="h-4 w-4 mr-1 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Add Ingredient
+            </button>
+
+            <!-- Hidden input to store the actual value sent to server -->
+            <input type="hidden" name="ingredients_text" id="ingredients_text"
+                value="{% if is_edit %}{% for ingredient in ingredients %}{% if let Some(q) = ingredient.quantity %}{{ q }} {% endif %}{% if let Some(unit) = ingredient.unit %}{{ unit }} {% endif %}{{ ingredient.name }}&#10;{% endfor %}{% endif %}">
+
+            <datalist id="unit-options">
+                <option value="cup">
+                <option value="cups">
+                <option value="tbsp">
+                <option value="tsp">
+                <option value="oz">
+                <option value="lb">
+                <option value="g">
+                <option value="kg">
+                <option value="ml">
+                <option value="l">
+                <option value="pinch">
+                <option value="dash">
+                <option value="clove">
+                <option value="can">
+                <option value="slice">
+            </datalist>
         </div>
 
         <div>
@@ -263,12 +295,123 @@
                     input.focus();
                 });
 
+                // --- Ingredient Logic ---
+                const ingredientsContainer = document.getElementById('ingredients-container');
+                const addIngredientBtn = document.getElementById('add-ingredient-btn');
+                const ingredientsHiddenInput = document.getElementById('ingredients_text');
+
+                function createIngredientRow(quantity = '', unit = '', name = '') {
+                    const row = document.createElement('div');
+                    row.className = 'flex gap-2 items-start';
+                    row.innerHTML = `
+                        <input type="text" placeholder="Qty" value="${quantity}" class="ing-qty w-20 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border">
+                        <input type="text" list="unit-options" placeholder="Unit" value="${unit}" class="ing-unit w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border">
+                        <input type="text" placeholder="Ingredient Name" value="${name}" class="ing-name flex-grow rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border">
+                        <button type="button" class="text-gray-400 hover:text-red-500 p-2 focus:outline-none">
+                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
+                    `;
+
+                    // Delete handler
+                    row.querySelector('button').addEventListener('click', () => {
+                        row.remove();
+                        syncIngredientsToHidden();
+                    });
+
+                    // Input change handler to sync
+                    row.querySelectorAll('input').forEach(input => {
+                        input.addEventListener('input', syncIngredientsToHidden);
+                    });
+
+                    return row;
+                }
+
+                function syncIngredientsToHidden() {
+                    const rows = ingredientsContainer.querySelectorAll('div.flex');
+                    const lines = [];
+                    rows.forEach(row => {
+                        const q = row.querySelector('.ing-qty').value.trim();
+                        const u = row.querySelector('.ing-unit').value.trim();
+                        const n = row.querySelector('.ing-name').value.trim();
+
+                        if (n) { // Only add if name is present
+                            let line = '';
+                            if (q) line += q + ' ';
+                            if (u) line += u + ' ';
+                            line += n;
+                            lines.push(line);
+                        }
+                    });
+                    ingredientsHiddenInput.value = lines.join('\n');
+                }
+
+                // Initial parse from hidden input (server rendered)
+                const initialText = ingredientsHiddenInput.value;
+                if (initialText.trim()) {
+                    initialText.split('\n').forEach(line => {
+                        line = line.trim();
+                        if (!line) return;
+
+                        // Simple heuristic parse for display: 
+                        // attempt to split headers "1 cup Flour" -> q=1, u=cup, n=Flour
+                        // This mirrors simple parsing logic or just puts whole thing in name if complex
+                        // For now, let's just dump it all in name if we can't easily split, or try a regex.
+                        // Actually, since we want to populate the fields, let's try a best-effort split.
+
+                        // Regex: Start with optional number/fraction, optional unit, then rest is name
+                        // This matches the regex used in some backend parsers but simplified for JS
+                        const match = line.match(/^([\d\/\.\-\s]+)?\s*(?:(cup|cups|tbsp|tsp|oz|lb|g|kg|ml|l|pinch|dash|clove|slice|can|tablespoon|teaspoon)[s]?\.?\s+)?(.*)$/i);
+
+                        if (match) {
+                            // Correctly extracted from regex
+                            const q = match[1] ? match[1].trim() : '';
+                            const u = match[2] ? match[2].trim() : '';
+                            const n = match[3] ? match[3].trim() : '';
+                            ingredientsContainer.appendChild(createIngredientRow(q, u, n));
+                        } else {
+                            // Fallback to simple split logic if regex fails
+                            const parts = line.split(/\s+/);
+                            // ... simple fallback logic ...
+                            let qty = '';
+                            let unit = '';
+                            let name = '';
+                            let idx = 0;
+
+                            if (parts[idx] && /^[\d\/\.\-]+$/.test(parts[idx])) {
+                                qty = parts[idx];
+                                idx++;
+                            }
+                            const commonUnits = ['cup', 'cups', 'tbsp', 'tsp', 'oz', 'lb', 'g', 'kg', 'ml', 'l', 'pinch', 'clove', 'can', 'slice'];
+                            if (parts[idx] && commonUnits.some(cu => parts[idx].toLowerCase().startsWith(cu))) {
+                                unit = parts[idx];
+                                idx++;
+                            }
+                            name = parts.slice(idx).join(' ');
+                            ingredientsContainer.appendChild(createIngredientRow(qty, unit, name));
+                        }
+
+                    });
+                } else {
+                    // Start with 6 empty rows for convenience
+                    for (let i = 0; i < 6; i++) {
+                        ingredientsContainer.appendChild(createIngredientRow());
+                    }
+                }
+
+                addIngredientBtn.addEventListener('click', () => {
+                    ingredientsContainer.appendChild(createIngredientRow());
+                });
+
+
                 // Auto-fill logic
                 const autoFillBtn = document.getElementById('auto-fill-btn');
                 const urlInput = document.getElementById('url');
                 const titleInput = document.getElementById('title');
                 const overviewInput = document.getElementById('overview');
-                const ingredientsInput = document.getElementById('ingredients_text');
+                // instructionsInput and importStatus are defined below in the original code, but we need them here or inside the listener
+                // We will rely on existing variable names if they are in scope, or re-select.
                 const instructionsInput = document.getElementById('instructions');
                 const importStatus = document.getElementById('import-status');
 
@@ -294,7 +437,8 @@
                         });
 
                         if (!response.ok) {
-                            throw new Error(`Import failed: ${response.statusText}`);
+                            const errorText = await response.text();
+                            throw new Error(`Import failed: ${response.status} ${response.statusText} - ${errorText}`);
                         }
 
                         const data = await response.json();
@@ -303,14 +447,16 @@
                         if (data.overview) overviewInput.value = data.overview;
 
                         if (data.ingredients && data.ingredients.length > 0) {
-                            const ingredientsText = data.ingredients.map(ing => {
-                                let line = '';
-                                if (ing.quantity) line += ing.quantity + ' ';
-                                if (ing.unit) line += ing.unit + ' ';
-                                line += ing.name;
-                                return line;
-                            }).join('\n');
-                            ingredientsInput.value = ingredientsText;
+                            // Clear existing
+                            ingredientsContainer.innerHTML = '';
+                            data.ingredients.forEach(ing => {
+                                // Provide default empty string if null
+                                const q = ing.quantity || '';
+                                const u = ing.unit || '';
+                                const n = ing.name || '';
+                                ingredientsContainer.appendChild(createIngredientRow(q, u, n));
+                            });
+                            syncIngredientsToHidden();
                         }
 
                         if (data.instructions && data.instructions.length > 0) {

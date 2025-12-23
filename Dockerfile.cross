@@ -1,0 +1,65 @@
+# Optimized Cross-Compilation Dockerfile for M1/Arm64 -> x86-64 Linux
+# Usage: docker build -f Dockerfile.cross --platform linux/amd64 -t recipe-viewer-x86 .
+
+# Stage 1: Build on the HOST platform (fast)
+FROM --platform=$BUILDPLATFORM rust:bookworm as builder
+
+WORKDIR /app
+
+# Install cross-compilation tools (linker for x86_64)
+RUN apt-get update && apt-get install -y \
+    gcc-x86-64-linux-gnu \
+    libc6-dev-amd64-cross \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add the target architecture to Rust
+RUN rustup target add x86_64-unknown-linux-gnu
+
+# Configure Cargo to use the cross-linker
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc
+
+# Copy manifest files
+COPY Cargo.toml Cargo.lock ./
+
+# Create dummy source for dependency caching
+RUN mkdir src && \
+    echo "fn main() {println!(\"if you see this, the build broke\")}" > src/main.rs
+
+# Build dependencies (release) for the TARGET architecture
+RUN cargo build --release --target x86_64-unknown-linux-gnu
+
+# Remove dummy build artifacts
+RUN rm -f target/x86_64-unknown-linux-gnu/release/deps/recipe_viewer*
+
+# Copy actual source code
+COPY . .
+
+# NOTE: existing recipes.db is required for sqlx compile-time checks
+# unless sqlx-data.json is present and SQLX_OFFLINE=true is set.
+ENV DATABASE_URL=sqlite:recipes.db
+
+# Build application for the TARGET architecture
+RUN cargo build --release --target x86_64-unknown-linux-gnu
+
+# Stage 2: Runtime image (x86-64)
+# We strictly specify the target platform here to ensure it pulls the x86-64 base image
+FROM --platform=linux/amd64 debian:bookworm-slim
+
+WORKDIR /app
+
+# Install runtime dependencies
+# Note: headless_chrome needs chromium
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    sqlite3 \
+    chromium \
+    fonts-liberation \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy binary from builder (from the specific target folder)
+COPY --from=builder /app/target/x86_64-unknown-linux-gnu/release/recipe_viewer /usr/local/bin/
+
+EXPOSE 8080
+ENV DATABASE_URL=sqlite:recipes.db
+CMD ["recipe_viewer"]
