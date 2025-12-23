@@ -1106,7 +1106,7 @@ pub async fn update_recipe_tags(
 
 #[derive(Deserialize, Debug)]
 pub struct ConversionEntry {
-    pub factor: f64,
+    pub factor: Option<f64>,
     pub target_unit: String,
     pub source_key: String,
     pub source_unit: String,
@@ -1212,17 +1212,52 @@ pub async fn convert_recipe(
     }
 
     // Prepare map for lookup: "unit name" -> (factor, target_unit)
+    // Prepare map for lookup: "unit name" -> (factor, target_unit)
     let mut conversion_map = std::collections::HashMap::new();
+
+    // Validate inputs first
+    for entry in &form.factors {
+        // Skip validation if no factor provided (user wants to skip this ingredient)
+        if entry.factor.is_some() {
+            if to_ml(1.0, &entry.source_unit).is_none() {
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    format!("Unknown source unit: {}", entry.source_unit),
+                )
+                    .into_response();
+            }
+
+            let valid_target_units = [
+                "g",
+                "kg",
+                "oz",
+                "lb",
+                "gram",
+                "grams",
+                "kilogram",
+                "kilograms",
+                "ounce",
+                "ounces",
+                "pound",
+                "pounds",
+            ];
+            if !valid_target_units.contains(&entry.target_unit.to_lowercase().as_str()) {
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    format!("Unknown target unit: {}", entry.target_unit),
+                )
+                    .into_response();
+            }
+        }
+    }
+
     for entry in form.factors {
-        conversion_map.insert(
-            entry.source_key.clone(),
-            (
-                entry.factor,
-                entry.target_unit,
-                entry.source_qty,
-                entry.source_unit,
-            ),
-        );
+        if let Some(f) = entry.factor {
+            conversion_map.insert(
+                entry.source_key.clone(),
+                (f, entry.target_unit, entry.source_qty, entry.source_unit),
+            );
+        }
     }
 
     // Fetch current recipe data to copy

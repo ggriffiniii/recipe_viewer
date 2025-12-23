@@ -10,6 +10,10 @@
             Target unit defaults to grams (g), but you can change it.
         </p>
 
+        <div id="error-message"
+            class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4">
+        </div>
+
         <div class="space-y-4">
             {% for (key, name, unit, qty) in ingredients %}
             <div class="bg-gray-50 p-4 rounded-md border border-gray-200 ingredient-row">
@@ -33,7 +37,7 @@
                     <!-- Target Side -->
                     <div class="flex-1">
                         <label class="block text-xs text-gray-500 mb-1">Weight</label>
-                        <input type="number" step="any" placeholder="e.g 120" required
+                        <input type="number" step="any" placeholder="e.g 120"
                             class="factor-input block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border">
                     </div>
                     <div class="w-20">
@@ -109,8 +113,11 @@
                         window.location.href = response.url;
                     }
                 } else {
-                    alert('Conversion failed. Please check your inputs.');
-                    console.error('Submission failed', response);
+                    const text = await response.text();
+                    const errorDiv = document.getElementById('error-message');
+                    errorDiv.textContent = text;
+                    errorDiv.classList.remove('hidden');
+                    window.scrollTo(0, 0);
                 }
             } catch (error) {
                 console.error('Error submitting form:', error);
