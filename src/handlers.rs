@@ -779,7 +779,6 @@ pub async fn create_recipe_form(
         ingredients: vec![],
         tags: vec![],
         user: user.map(|u| u.email),
-        all_tags: all_tags.clone(),
         ingredients_json: "[]".to_string(),
         all_tags_json: serde_json::to_string(&all_tags).unwrap_or_else(|_| "[]".to_string()),
         initial_url: params.get("url").cloned(),
@@ -932,7 +931,6 @@ pub async fn edit_recipe_form(
                 ingredients: ingredients.clone(),
                 tags,
                 user: user.map(|u| u.email),
-                all_tags: all_tags.clone(),
                 ingredients_json: serde_json::to_string(&ingredients)
                     .unwrap_or_else(|_| "[]".to_string()),
                 all_tags_json: serde_json::to_string(&all_tags)
@@ -1447,4 +1445,30 @@ pub async fn convert_recipe(
         "Failed to convert recipe",
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_unit() {
+        assert_eq!(normalize_unit("cups"), "cup");
+        assert_eq!(normalize_unit("T"), "tbsp");
+        assert_eq!(normalize_unit("tsp."), "tsp");
+        assert_eq!(normalize_unit("ounce"), "oz");
+        assert_eq!(normalize_unit("Gram"), "g");
+        assert_eq!(normalize_unit("pints"), "pint");
+        assert_eq!(normalize_unit("to taste"), "to taste");
+    }
+
+    #[test]
+    fn test_parse_quantity() {
+        assert_eq!(parse_quantity("1"), Some(1.0));
+        assert_eq!(parse_quantity("1.5"), Some(1.5));
+        assert_eq!(parse_quantity("1/2"), Some(0.5));
+        assert_eq!(parse_quantity("1-1/2"), Some(1.5));
+        assert_eq!(parse_quantity("abc"), None);
+        assert_eq!(parse_quantity("1/0"), None);
+    }
 }

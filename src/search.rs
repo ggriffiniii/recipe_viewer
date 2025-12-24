@@ -227,6 +227,7 @@ fn parse_field_string(s: &str) -> Query {
     } else if let Some(val) = s.strip_prefix("tag:") {
         Query::Tag(val.to_string())
     } else {
+        let s = s.strip_prefix("rating:").unwrap_or(s);
         // Try to parse rating: name=val, name>val, name<val
         // We look for operators =, >, <, >=, <=
         // Order matters: check longer operators first.
@@ -248,5 +249,114 @@ fn parse_field_string(s: &str) -> Query {
         }
 
         Query::Term(s.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tokenize() {
+        let tokens = tokenize("title:pizza tag:easy rating:me>=4 (cheap OR fast)");
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Str("title:pizza".to_string()),
+                Token::Str("tag:easy".to_string()),
+                Token::Str("rating:me>=4".to_string()),
+                Token::LParen,
+                Token::Str("cheap".to_string()),
+                Token::Or,
+                Token::Str("fast".to_string()),
+                Token::RParen,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_simple() {
+        let query = parse("pizza").unwrap();
+        assert_eq!(query, Query::Term("pizza".to_string()));
+
+        let query = parse("title:pizza").unwrap();
+        assert_eq!(query, Query::Title("pizza".to_string()));
+
+        let query = parse("tag:dinner").unwrap();
+        assert_eq!(query, Query::Tag("dinner".to_string()));
+    }
+
+    #[test]
+    fn test_parse_rating() {
+        let query = parse("rating:me=5").unwrap();
+        assert_eq!(
+            query,
+            Query::Rating {
+                rater: "me".to_string(),
+                op: "=".to_string(),
+                score: 5
+            }
+        );
+
+        let query = parse("rating:user>=4").unwrap();
+        assert_eq!(
+            query,
+            Query::Rating {
+                rater: "user".to_string(),
+                op: ">=".to_string(),
+                score: 4
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_logic() {
+        let query = parse("pizza AND easy").unwrap();
+        assert_eq!(
+            query,
+            Query::And(
+                Box::new(Query::Term("pizza".to_string())),
+                Box::new(Query::Term("easy".to_string()))
+            )
+        );
+
+        let query = parse("pizza easy").unwrap();
+        assert_eq!(
+            query,
+            Query::And(
+                Box::new(Query::Term("pizza".to_string())),
+                Box::new(Query::Term("easy".to_string()))
+            )
+        );
+
+        let query = parse("fast OR cheap").unwrap();
+        assert_eq!(
+            query,
+            Query::Or(
+                Box::new(Query::Term("fast".to_string())),
+                Box::new(Query::Term("cheap".to_string()))
+            )
+        );
+
+        let query = parse("NOT spicy").unwrap();
+        assert_eq!(
+            query,
+            Query::Not(Box::new(Query::Term("spicy".to_string())))
+        );
+    }
+
+    #[test]
+    fn test_parse_complex() {
+        let query = parse("title:chicken (tag:easy OR tag:quick)").unwrap();
+        assert_eq!(
+            query,
+            Query::And(
+                Box::new(Query::Title("chicken".to_string())),
+                Box::new(Query::Or(
+                    Box::new(Query::Tag("easy".to_string())),
+                    Box::new(Query::Tag("quick".to_string()))
+                ))
+            )
+        );
     }
 }

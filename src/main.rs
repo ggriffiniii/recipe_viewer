@@ -1,24 +1,10 @@
-mod ai;
-mod handlers;
-mod models;
-mod search;
-mod state;
-mod templates;
-
-use crate::state::AppState;
-use axum::{
-    Router,
-    routing::{get, post},
-};
 use dotenvy::dotenv;
 use oauth2::{AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl, basic::BasicClient};
+use recipe_viewer::create_app;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::env;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use time::Duration;
-use tower_sessions::{Expiry, SessionManagerLayer};
-use tower_sessions_sqlx_store::SqliteStore;
 
 #[tokio::main]
 async fn main() {
@@ -57,50 +43,7 @@ async fn main() {
         )
         .set_redirect_uri(RedirectUrl::new(google_redirect_url).expect("Invalid redirect URL"));
 
-    let session_store = SqliteStore::new(pool.clone());
-    session_store
-        .migrate()
-        .await
-        .expect("Failed to run session migrations");
-
-    let session_layer = SessionManagerLayer::new(session_store)
-        .with_secure(false) // For local development
-        .with_same_site(tower_sessions::cookie::SameSite::Lax)
-        .with_expiry(Expiry::OnInactivity(Duration::hours(24)));
-
-    let state = AppState { pool, oauth_client };
-
-    let app = Router::new()
-        .route("/", get(handlers::list_recipes))
-        .route("/recipes/new", get(handlers::create_recipe_form))
-        .route("/recipes", post(handlers::create_recipe))
-        .route("/recipes/import", post(handlers::import_recipe))
-        .route(
-            "/recipes/{id}",
-            get(handlers::recipe_detail)
-                .post(handlers::update_recipe)
-                .delete(handlers::delete_recipe),
-        )
-        .route(
-            "/recipes/{id}/versions/{version}",
-            get(handlers::recipe_revision_detail),
-        )
-        .route("/recipes/{id}/tags", post(handlers::update_recipe_tags))
-        .route("/recipes/{id}/ratings", post(handlers::update_rating))
-        .route("/recipes/{id}/edit", get(handlers::edit_recipe_form))
-        .route(
-            "/recipes/{id}/restore/{version}",
-            post(handlers::restore_recipe_revision),
-        )
-        .route(
-            "/recipes/{id}/convert",
-            get(handlers::convert_recipe_form).post(handlers::convert_recipe),
-        )
-        .route("/auth/google", get(handlers::google_auth))
-        .route("/auth/callback", get(handlers::google_auth_callback))
-        .route("/logout", get(handlers::logout))
-        .layer(session_layer)
-        .with_state(state);
+    let app = create_app(pool, oauth_client, false).await;
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
     println!("Listening on {}", addr);

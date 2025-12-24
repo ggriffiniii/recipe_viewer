@@ -70,7 +70,6 @@ pub struct RecipeFormTemplate {
     pub ingredients: Vec<crate::models::Ingredient>,
     pub tags: Vec<crate::models::Tag>,
     pub user: Option<String>,
-    pub all_tags: Vec<String>,
     pub ingredients_json: String,
     pub all_tags_json: String,
     pub initial_url: Option<String>,
