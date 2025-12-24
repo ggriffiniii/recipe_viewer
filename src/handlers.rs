@@ -127,6 +127,44 @@ pub struct ImportRequest {
     pub url: String,
 }
 
+use fantoccini::{ClientBuilder, Locator};
+use std::net::TcpListener;
+use std::process::{Child, Command};
+
+struct ChromeDriver {
+    process: Child,
+}
+
+impl ChromeDriver {
+    fn start(port: u16) -> Result<Self, String> {
+        let cmd = std::env::var("CHROMEDRIVER_PATH").unwrap_or_else(|_| "chromedriver".to_string());
+        let process = Command::new(cmd)
+            .arg(format!("--port={}", port))
+            .arg("--whitelisted-ips=")
+            .spawn()
+            .map_err(|e| format!("Failed to spawn chromedriver: {}", e))?;
+        // Give it a moment to start
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        Ok(Self { process })
+    }
+}
+
+impl Drop for ChromeDriver {
+    fn drop(&mut self) {
+        let _ = self.process.kill();
+        let _ = self.process.wait();
+    }
+}
+
+fn find_available_port() -> Result<u16, String> {
+    let listener =
+        TcpListener::bind("127.0.0.1:0").map_err(|e| format!("Failed to bind to port 0: {}", e))?;
+    let addr = listener
+        .local_addr()
+        .map_err(|e| format!("Failed to get local addr: {}", e))?;
+    Ok(addr.port())
+}
+
 pub async fn import_recipe(
     Json(payload): Json<ImportRequest>,
 ) -> Result<impl IntoResponse, (axum::http::StatusCode, String)> {
@@ -137,76 +175,115 @@ pub async fn import_recipe(
         )
     })?;
 
-    // Fetch the URL content using headless_chrome
-    let browser_opts = headless_chrome::LaunchOptionsBuilder::default()
-        .headless(true)
-        .sandbox(false)
-        .enable_logging(true)
-        .build()
+    // 1. Find port
+    let port =
+        find_available_port().map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    println!("Starting ChromeDriver on port {}", port);
+
+    // 2. Start ChromeDriver (The guard ensures it is killed when this function returns/errors)
+    let _driver_guard = ChromeDriver::start(port)
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    // 3. Connect Fantoccini
+    let mut caps = serde_json::map::Map::new();
+    let chrome_opts = serde_json::json!({
+        "args": ["--headless", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage", "--disable-software-rasterizer", "--window-size=1920,1080"]
+    });
+    caps.insert("goog:chromeOptions".to_string(), chrome_opts);
+
+    let mut client = None;
+    for i in 0..10 {
+        match ClientBuilder::native()
+            .capabilities(caps.clone())
+            .connect(&format!("http://localhost:{}", port))
+            .await
+        {
+            Ok(c) => {
+                client = Some(c);
+                break;
+            }
+            Err(_) => {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                if i == 9 {
+                    eprintln!("Failed to connect to chromedriver after retries");
+                }
+            }
+        }
+    }
+    let client = client.ok_or((
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        "Failed to connect to ChromeDriver".to_string(),
+    ))?;
+
+    // 4. Navigate
+    client
+        .goto(&payload.url)
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Wait for content (H1 is a good proxy)
+    client
+        .wait()
+        .for_element(Locator::Css("h1"))
+        .await
         .map_err(|e| {
-            let msg = format!("Failed to build launch options: {}", e);
-            eprintln!("{}", msg);
-            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, msg)
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Wait failed: {}", e),
+            )
         })?;
 
-    // In a real app, you might want to reuse the browser instance or manage it in a pool.
-    // For now, launching per request is simpler but slower.
-    let browser = headless_chrome::Browser::new(browser_opts).map_err(|e| {
-        let msg = format!("Failed to launch browser: {}", e);
-        eprintln!("{}", msg);
-        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, msg)
-    })?;
+    // Give it a moment for iframes to render
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
-    let tab = browser.new_tab().map_err(|e| {
-        let msg = format!("Failed to create tab: {}", e);
-        eprintln!("{}", msg);
-        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, msg)
-    })?;
+    // 5. Extract Text
+    let mut text = String::new();
 
-    tab.navigate_to(&payload.url).map_err(|e| {
-        let msg = format!("Failed to navigate to URL: {}", e);
-        eprintln!("{}", msg);
-        (axum::http::StatusCode::BAD_REQUEST, msg)
-    })?;
+    // Main Body
+    if let Ok(body) = client.find(Locator::Css("body")).await {
+        match body.text().await {
+            Ok(t) => text.push_str(&t),
+            Err(e) => eprintln!("Failed to get body text: {}", e),
+        }
+    }
 
-    // Wait for network idle or some element?
-    // Let's just wait for the body to be present and maybe a small delay or network idle
-    tab.wait_until_navigated().map_err(|e| {
-        let msg = format!("Failed to wait for navigation: {}", e);
-        eprintln!("{}", msg);
-        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, msg)
-    })?;
+    // Iframes
+    // We get all iframe elements first
+    if let Ok(iframes) = client.find_all(Locator::Css("iframe")).await {
+        println!("Found {} iframes", iframes.len());
 
-    // simple wait for body
-    let _element = tab.wait_for_element("body").map_err(|e| {
-        let msg = format!("Failed to wait for body: {}", e);
-        eprintln!("{}", msg);
-        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, msg)
-    })?;
+        for (i, _frame) in iframes.iter().enumerate() {
+            text.push_str(&format!("\n\n--- IFrame {} ---\n", i));
+            // Switch to frame
+            if let Ok(_) = client.enter_frame(Some(i as u16)).await {
+                // Extract body text of frame
+                if let Ok(body) = client.find(Locator::Css("body")).await {
+                    match body.text().await {
+                        Ok(t) => text.push_str(&t),
+                        Err(e) => eprintln!("Failed to get frame body text: {}", e),
+                    }
+                }
 
-    // Extract text from the body
-    let body_element = tab.find_element("body").map_err(|e| {
-        let msg = format!("Failed to find body: {}", e);
-        eprintln!("{}", msg);
-        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, msg)
-    })?;
+                // Switch back to parent
+                if let Err(e) = client.enter_parent_frame().await {
+                    eprintln!("Failed to switch back to parent frame: {}", e);
+                    break;
+                }
+            } else {
+                eprintln!("Failed to enter frame {}", i);
+            }
+        }
+    }
 
-    let text = body_element.get_inner_text().map_err(|e| {
-        let msg = format!("Failed to get text: {}", e);
-        eprintln!("{}", msg);
-        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, msg)
-    })?;
-
-    // Truncate to avoid excessive token usage if the page is massive (e.g. 100k chars ~ 25k tokens, safe specific to Gemini Flash 2.5 which has 1M context)
-    // Flash Lite might be smaller. Let's cap at reasonable 50k chars.
+    // Truncate
     let truncated_text = if text.len() > 50_000 {
         &text[..50_000]
     } else {
         &text
     };
 
-    let client = reqwest::Client::new();
-    let parsed = crate::ai::extract_recipe_from_text(&client, &api_key, truncated_text)
+    let client_http = reqwest::Client::new();
+    let parsed = crate::ai::extract_recipe_from_text(&client_http, &api_key, truncated_text)
         .await
         .map_err(|e| {
             let msg = format!("AI extraction failed: {}", e);
@@ -639,6 +716,9 @@ fn normalize_unit(u: &str) -> String {
         "kg" | "kilogram" | "kilograms" => "kg".to_string(),
         "ml" | "milliliter" | "milliliters" => "ml".to_string(),
         "l" | "liter" | "liters" => "l".to_string(),
+        "pt" | "pint" | "pints" => "pint".to_string(),
+        "qt" | "quart" | "quarts" => "quart".to_string(),
+        "gal" | "gallon" | "gallons" => "gallon".to_string(),
         _ => u.to_string(),
     }
 }
@@ -693,7 +773,9 @@ pub async fn create_recipe_form(
         ingredients: vec![],
         tags: vec![],
         user: user.map(|u| u.email),
-        all_tags,
+        all_tags: all_tags.clone(),
+        ingredients_json: "[]".to_string(),
+        all_tags_json: serde_json::to_string(&all_tags).unwrap_or_else(|_| "[]".to_string()),
     })
     .into_response())
 }
@@ -840,10 +922,14 @@ pub async fn edit_recipe_form(
             Ok(HtmlTemplate(RecipeFormTemplate {
                 is_edit: true,
                 recipe: Some(recipe),
-                ingredients,
+                ingredients: ingredients.clone(),
                 tags,
                 user: user.map(|u| u.email),
-                all_tags,
+                all_tags: all_tags.clone(),
+                ingredients_json: serde_json::to_string(&ingredients)
+                    .unwrap_or_else(|_| "[]".to_string()),
+                all_tags_json: serde_json::to_string(&all_tags)
+                    .unwrap_or_else(|_| "[]".to_string()),
             })
             .into_response())
         }

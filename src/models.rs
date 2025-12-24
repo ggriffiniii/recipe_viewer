@@ -36,7 +36,7 @@ pub struct RecipeWithRevision {
     #[allow(dead_code)]
     pub revision_created_at: NaiveDateTime,
 }
-#[derive(Debug, FromRow, Serialize, Deserialize)]
+#[derive(Debug, FromRow, Serialize, Deserialize, Clone)]
 pub struct Ingredient {
     pub id: i64,
     pub revision_id: i64,

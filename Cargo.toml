@@ -9,8 +9,9 @@ axum = "0.8.8"
 axum-extra = { version = "0.12.3", features = ["cookie", "cookie-private"] }
 chrono = { version = "0.4.42", features = ["serde"] }
 dotenvy = "0.15.7"
-headless_chrome = "1.0.20"
+fantoccini = "0.21.0"
 oauth2 = { version = "5.0.0", features = ["reqwest"] }
+rand = "0.8.5"
 reqwest = { version = "0.12.26", default-features = false, features = ["rustls-tls", "json", "blocking"] }
 scraper = "0.25.0"
 serde = { version = "1.0.228", features = ["derive"] }

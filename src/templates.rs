@@ -49,6 +49,9 @@ impl RecipeDetailTemplate {
         match unit {
             "cup" => "cups",
             "lb" => "lbs",
+            "pint" => "pints",
+            "quart" => "quarts",
+            "gallon" => "gallons",
             // "tsp" => "tsps", // Optional, often left as tsp
             // "tbsp" => "tbsps", // Optional
             // "oz" => "oz", // Usually invariant
@@ -68,6 +71,8 @@ pub struct RecipeFormTemplate {
     pub tags: Vec<crate::models::Tag>,
     pub user: Option<String>,
     pub all_tags: Vec<String>,
+    pub ingredients_json: String,
+    pub all_tags_json: String,
 }
 
 #[derive(Template)]

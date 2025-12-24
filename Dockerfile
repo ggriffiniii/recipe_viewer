@@ -38,6 +38,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     sqlite3 \
     chromium \
+    chromium-driver \
     fonts-liberation \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*

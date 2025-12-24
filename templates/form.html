@@ -111,9 +111,9 @@
 
         <script>
             // Available tags from server, ordered by popularity
-            const AVAILABLE_TAGS = [
-                {% for tag in all_tags %}"{{ tag }}"{% if !loop.last %}, {% endif %} {% endfor %}
-            ];
+            const AVAILABLE_TAGS = {{ all_tags_json| safe }};
+
+            const SERVER_INGREDIENTS = {{ ingredients_json| safe }};
 
             document.addEventListener('DOMContentLoaded', () => {
                 const container = document.getElementById('tags-container');
@@ -293,44 +293,55 @@
                 }
 
                 // Initial parse from hidden input (server rendered)
-                const initialText = ingredientsHiddenInput.value;
-                if (initialText.trim()) {
-                    initialText.split('\n').forEach(line => {
-                        line = line.trim();
-                        if (!line) return;
-
-                        // Regex: Start with optional number/fraction, optional unit, then rest is name
-                        const match = line.match(/^([\d\/\.\-\s]+)?\s*(?:(cup|cups|tbsp|tsp|oz|lb|g|kg|ml|l|pinch|dash|clove|slice|can|tablespoon|teaspoon)[s]?\.?\s+)?(.*)$/i);
-
-                        if (match) {
-                            const q = match[1] ? match[1].trim() : '';
-                            const u = match[2] ? match[2].trim() : '';
-                            const n = match[3] ? match[3].trim() : '';
-                            ingredientsContainer.appendChild(createIngredientRow(q, u, n));
-                        } else {
-                            // Fallback
-                            const parts = line.split(/\s+/);
-                            let qty = '';
-                            let unit = '';
-                            let name = '';
-                            let idx = 0;
-
-                            if (parts[idx] && /^[\d\/\.\-]+$/.test(parts[idx])) {
-                                qty = parts[idx];
-                                idx++;
-                            }
-                            const commonUnits = ['cup', 'cups', 'tbsp', 'tsp', 'oz', 'lb', 'g', 'kg', 'ml', 'l', 'pinch', 'clove', 'can', 'slice'];
-                            if (parts[idx] && commonUnits.some(cu => parts[idx].toLowerCase().startsWith(cu))) {
-                                unit = parts[idx];
-                                idx++;
-                            }
-                            name = parts.slice(idx).join(' ');
-                            ingredientsContainer.appendChild(createIngredientRow(qty, unit, name));
-                        }
+                // Use structured data if available, otherwise fall back (e.g. legacy/new)
+                if (typeof SERVER_INGREDIENTS !== 'undefined' && SERVER_INGREDIENTS.length > 0) {
+                    SERVER_INGREDIENTS.forEach(ing => {
+                        const q = ing.quantity || '';
+                        let u = ing.unit || '';
+                        if (typeof u === 'string' && u.toLowerCase() === 'null') u = '';
+                        const n = ing.name || '';
+                        ingredientsContainer.appendChild(createIngredientRow(q, u, n));
                     });
                 } else {
-                    for (let i = 0; i < 6; i++) {
-                        ingredientsContainer.appendChild(createIngredientRow());
+                    const initialText = ingredientsHiddenInput.value;
+                    if (initialText.trim()) {
+                        initialText.split('\n').forEach(line => {
+                            line = line.trim();
+                            if (!line) return;
+
+                            // Regex: Start with optional number/fraction, optional unit, then rest is name
+                            const match = line.match(/^([\d\/\.\-\s]+)?\s*(?:(cup|cups|tbsp|tsp|oz|lb|g|kg|ml|l|pinch|dash|clove|slice|can|tablespoon|teaspoon)[s]?\.?\s+)?(.*)$/i);
+
+                            if (match) {
+                                const q = match[1] ? match[1].trim() : '';
+                                const u = match[2] ? match[2].trim() : '';
+                                const n = match[3] ? match[3].trim() : '';
+                                ingredientsContainer.appendChild(createIngredientRow(q, u, n));
+                            } else {
+                                // Fallback
+                                const parts = line.split(/\s+/);
+                                let qty = '';
+                                let unit = '';
+                                let name = '';
+                                let idx = 0;
+
+                                if (parts[idx] && /^[\d\/\.\-]+$/.test(parts[idx])) {
+                                    qty = parts[idx];
+                                    idx++;
+                                }
+                                const commonUnits = ['cup', 'cups', 'tbsp', 'tsp', 'oz', 'lb', 'g', 'kg', 'ml', 'l', 'pinch', 'clove', 'can', 'slice'];
+                                if (parts[idx] && commonUnits.some(cu => parts[idx].toLowerCase().startsWith(cu))) {
+                                    unit = parts[idx];
+                                    idx++;
+                                }
+                                name = parts.slice(idx).join(' ');
+                                ingredientsContainer.appendChild(createIngredientRow(qty, unit, name));
+                            }
+                        });
+                    } else {
+                        for (let i = 0; i < 6; i++) {
+                            ingredientsContainer.appendChild(createIngredientRow());
+                        }
                     }
                 }
 
@@ -353,6 +364,8 @@
                         alert('Please enter a URL first.');
                         return;
                     }
+
+
 
                     autoFillBtn.disabled = true;
                     importStatus.textContent = 'Fetching and parsing recipe...';
@@ -379,7 +392,8 @@
                             ingredientsContainer.innerHTML = '';
                             data.ingredients.forEach(ing => {
                                 const q = ing.quantity || '';
-                                const u = ing.unit || '';
+                                let u = ing.unit || '';
+                                if (typeof u === 'string' && u.toLowerCase() === 'null') u = '';
                                 const n = ing.name || '';
                                 ingredientsContainer.appendChild(createIngredientRow(q, u, n));
                             });
