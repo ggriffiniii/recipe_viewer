@@ -282,6 +282,11 @@ pub async fn import_recipe(
         &text
     };
 
+    // Explicitly close the session to free resources
+    if let Err(e) = client.close().await {
+        eprintln!("Failed to close Fantoccini session: {}", e);
+    }
+
     let client_http = reqwest::Client::new();
     let parsed = crate::ai::extract_recipe_from_text(&client_http, &api_key, truncated_text)
         .await
@@ -757,6 +762,7 @@ fn parse_quantity(s: &str) -> Option<f64> {
 pub async fn create_recipe_form(
     State(pool): State<SqlitePool>,
     session: Session,
+    Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> Result<Response, (axum::http::StatusCode, String)> {
     let user: Option<SessionUser> = session.get("user").await.unwrap_or(None);
     if user.is_none() {
@@ -776,6 +782,7 @@ pub async fn create_recipe_form(
         all_tags: all_tags.clone(),
         ingredients_json: "[]".to_string(),
         all_tags_json: serde_json::to_string(&all_tags).unwrap_or_else(|_| "[]".to_string()),
+        initial_url: params.get("url").cloned(),
     })
     .into_response())
 }
@@ -930,6 +937,7 @@ pub async fn edit_recipe_form(
                     .unwrap_or_else(|_| "[]".to_string()),
                 all_tags_json: serde_json::to_string(&all_tags)
                     .unwrap_or_else(|_| "[]".to_string()),
+                initial_url: None,
             })
             .into_response())
         }

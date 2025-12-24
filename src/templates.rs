@@ -73,6 +73,7 @@ pub struct RecipeFormTemplate {
     pub all_tags: Vec<String>,
     pub ingredients_json: String,
     pub all_tags_json: String,
+    pub initial_url: Option<String>,
 }
 
 #[derive(Template)]
