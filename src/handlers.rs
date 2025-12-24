@@ -127,44 +127,6 @@ pub struct ImportRequest {
     pub url: String,
 }
 
-use fantoccini::{ClientBuilder, Locator};
-use std::net::TcpListener;
-use std::process::{Child, Command};
-
-struct ChromeDriver {
-    process: Child,
-}
-
-impl ChromeDriver {
-    fn start(port: u16) -> Result<Self, String> {
-        let cmd = std::env::var("CHROMEDRIVER_PATH").unwrap_or_else(|_| "chromedriver".to_string());
-        let process = Command::new(cmd)
-            .arg(format!("--port={}", port))
-            .arg("--whitelisted-ips=")
-            .spawn()
-            .map_err(|e| format!("Failed to spawn chromedriver: {}", e))?;
-        // Give it a moment to start
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        Ok(Self { process })
-    }
-}
-
-impl Drop for ChromeDriver {
-    fn drop(&mut self) {
-        let _ = self.process.kill();
-        let _ = self.process.wait();
-    }
-}
-
-fn find_available_port() -> Result<u16, String> {
-    let listener =
-        TcpListener::bind("127.0.0.1:0").map_err(|e| format!("Failed to bind to port 0: {}", e))?;
-    let addr = listener
-        .local_addr()
-        .map_err(|e| format!("Failed to get local addr: {}", e))?;
-    Ok(addr.port())
-}
-
 pub async fn import_recipe(
     Json(payload): Json<ImportRequest>,
 ) -> Result<impl IntoResponse, (axum::http::StatusCode, String)> {
@@ -175,105 +137,10 @@ pub async fn import_recipe(
         )
     })?;
 
-    // 1. Find port
-    let port =
-        find_available_port().map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    println!("Starting ChromeDriver on port {}", port);
-
-    // 2. Start ChromeDriver (The guard ensures it is killed when this function returns/errors)
-    let _driver_guard = ChromeDriver::start(port)
+    // Use the extracted scraper logic
+    let text = crate::scraper::scrape_url(&payload.url)
+        .await
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
-
-    // 3. Connect Fantoccini
-    let mut caps = serde_json::map::Map::new();
-    let chrome_opts = serde_json::json!({
-        "args": ["--headless", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage", "--disable-software-rasterizer", "--window-size=1920,1080"]
-    });
-    caps.insert("goog:chromeOptions".to_string(), chrome_opts);
-
-    let mut client = None;
-    for i in 0..10 {
-        match ClientBuilder::native()
-            .capabilities(caps.clone())
-            .connect(&format!("http://localhost:{}", port))
-            .await
-        {
-            Ok(c) => {
-                client = Some(c);
-                break;
-            }
-            Err(_) => {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                if i == 9 {
-                    eprintln!("Failed to connect to chromedriver after retries");
-                }
-            }
-        }
-    }
-    let client = client.ok_or((
-        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-        "Failed to connect to ChromeDriver".to_string(),
-    ))?;
-
-    // 4. Navigate
-    client
-        .goto(&payload.url)
-        .await
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    // Wait for content (H1 is a good proxy)
-    client
-        .wait()
-        .for_element(Locator::Css("h1"))
-        .await
-        .map_err(|e| {
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Wait failed: {}", e),
-            )
-        })?;
-
-    // Give it a moment for iframes to render
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
-    // 5. Extract Text
-    let mut text = String::new();
-
-    // Main Body
-    if let Ok(body) = client.find(Locator::Css("body")).await {
-        match body.text().await {
-            Ok(t) => text.push_str(&t),
-            Err(e) => eprintln!("Failed to get body text: {}", e),
-        }
-    }
-
-    // Iframes
-    // We get all iframe elements first
-    if let Ok(iframes) = client.find_all(Locator::Css("iframe")).await {
-        println!("Found {} iframes", iframes.len());
-
-        for (i, _frame) in iframes.iter().enumerate() {
-            text.push_str(&format!("\n\n--- IFrame {} ---\n", i));
-            // Switch to frame
-            if let Ok(_) = client.enter_frame(Some(i as u16)).await {
-                // Extract body text of frame
-                if let Ok(body) = client.find(Locator::Css("body")).await {
-                    match body.text().await {
-                        Ok(t) => text.push_str(&t),
-                        Err(e) => eprintln!("Failed to get frame body text: {}", e),
-                    }
-                }
-
-                // Switch back to parent
-                if let Err(e) = client.enter_parent_frame().await {
-                    eprintln!("Failed to switch back to parent frame: {}", e);
-                    break;
-                }
-            } else {
-                eprintln!("Failed to enter frame {}", i);
-            }
-        }
-    }
 
     // Truncate
     let truncated_text = if text.len() > 50_000 {
@@ -281,11 +148,6 @@ pub async fn import_recipe(
     } else {
         &text
     };
-
-    // Explicitly close the session to free resources
-    if let Err(e) = client.close().await {
-        eprintln!("Failed to close Fantoccini session: {}", e);
-    }
 
     let client_http = reqwest::Client::new();
     let parsed = crate::ai::extract_recipe_from_text(&client_http, &api_key, truncated_text)

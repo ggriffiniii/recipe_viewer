@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod handlers;
 pub mod models;
+pub mod scraper;
 pub mod search;
 pub mod state;
 pub mod templates;
