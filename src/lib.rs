@@ -61,7 +61,8 @@ pub async fn create_app(pool: SqlitePool, oauth_client: OAuthClient, test_mode: 
         .route("/logout", get(handlers::logout));
 
     let app = if test_mode {
-        app.layer(axum::middleware::from_fn(test_handlers::mock_auth_layer))
+        app.route("/test/set_session", get(test_handlers::set_test_session))
+            .layer(axum::middleware::from_fn(test_handlers::mock_auth_layer))
     } else {
         app
     };
@@ -86,5 +87,19 @@ mod test_handlers {
                 .unwrap();
         }
         next.run(request).await
+    }
+
+    use axum::response::IntoResponse;
+    pub async fn set_test_session(session: Session) -> impl IntoResponse {
+        session
+            .insert(
+                "user",
+                SessionUser {
+                    email: "test@example.com".to_string(),
+                },
+            )
+            .await
+            .unwrap();
+        "Session set"
     }
 }
