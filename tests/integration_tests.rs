@@ -85,4 +85,6 @@ async fn test_new_recipe_form_prefill() {
         .unwrap();
     let body_str = String::from_utf8(body.to_vec()).unwrap();
     assert!(body_str.contains("https://example.com/pizza"));
+    assert!(body_str.contains("id=\"bookmarklet-link\""));
+    assert!(body_str.contains("Recipe Importer Bookmarklet"));
 }
