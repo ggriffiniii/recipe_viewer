@@ -94,26 +94,14 @@
                             });
                         }
 
-                        // HTMX Focus Retention for Search
-                        let searchFocus = null;
-                        document.addEventListener('htmx:beforeRequest', (e) => {
-                            const input = document.getElementById('search-q');
-                            if (input && document.activeElement === input) {
-                                searchFocus = {
-                                    start: input.selectionStart,
-                                    end: input.selectionEnd
-                                };
-                            }
-                        });
-
-                        document.addEventListener('htmx:afterSettle', (e) => {
-                            if (searchFocus) {
+                        // Prevent OOB swap of the search bar if it's currently focused
+                        // to avoid losing keystrokes when the server response arrives.
+                        document.addEventListener('htmx:oobBeforeSwap', (e) => {
+                            if (e.detail.target.id === 'header-search-wrapper') {
                                 const input = document.getElementById('search-q');
-                                if (input) {
-                                    input.focus();
-                                    input.setSelectionRange(searchFocus.start, searchFocus.end);
+                                if (input && document.activeElement === input) {
+                                    e.preventDefault();
                                 }
-                                searchFocus = null;
                             }
                         });
                     });
