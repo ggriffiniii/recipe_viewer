@@ -133,7 +133,11 @@ pub async fn list_recipes(
                 .unwrap_or(part)
                 .strip_suffix(')')
                 .unwrap_or(part);
-            if let Some(tag) = part.strip_prefix("tag:") {
+            if let Some(mut tag) = part.strip_prefix("tag:") {
+                // Strip quotes if present
+                if tag.starts_with('"') && tag.ends_with('"') && tag.len() >= 2 {
+                    tag = &tag[1..tag.len() - 1];
+                }
                 active_tags.push(tag.to_string());
             }
         }
@@ -154,7 +158,13 @@ pub async fn list_recipes(
         } else {
             let q_param = new_tags
                 .iter()
-                .map(|t| format!("tag:{}", t))
+                .map(|t| {
+                    if t.contains(' ') {
+                        format!("tag:\"{}\"", t)
+                    } else {
+                        format!("tag:{}", t)
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join(" OR ");
             format!("/?q={}", urlencoding::encode(&q_param))

@@ -423,3 +423,59 @@ async fn test_tag_exact_match() {
     assert!(body_str.contains("Spicy Dish"));
     assert!(!body_str.contains("Extra Spicy Dish"));
 }
+
+#[tokio::test]
+async fn test_tag_with_spaces() {
+    let app = setup_test_app().await;
+
+    // 1. Create a recipe with a tag containing a space
+    let payload = serde_json::json!({
+        "title": "Thin Crust Pizza",
+        "instructions": "...",
+        "ingredients": [],
+        "tags": ["thin crust"]
+    });
+
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/recipes")
+                .header("Content-Type", "application/json")
+                .header("x-test-user", "test@example.com")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // 2. Search for the tag with quotes (exact match)
+    // The handler should normalize this and also return it in active_tags
+    let q = urlencoding::encode("tag:\"thin crust\"");
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(&format!("/?q={}", q))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let body_str = String::from_utf8(
+        axum::body::to_bytes(response.into_body(), 100_000)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+
+    assert!(body_str.contains("Thin Crust Pizza"));
+
+    // 3. Verify highlighting (the badge should have the indigo-600 class)
+    // and the toggle link should be correct (removing the tag)
+    assert!(body_str.contains("bg-indigo-600 text-white"));
+    assert!(body_str.contains("thin crust"));
+}
