@@ -344,3 +344,88 @@ async fn test_ui_recipe_import_prefill() {
 
     ctx.client.clone().close().await.unwrap();
 }
+
+#[tokio::test]
+async fn test_ui_live_search() {
+    let ctx = TestContext::setup().await;
+    let base_url = format!("http://localhost:{}", ctx.app_port);
+
+    // 1. Login
+    ctx.client
+        .goto(&format!("{}/test/set_session", base_url))
+        .await
+        .unwrap();
+
+    // 2. Create sample recipes
+    let recipes = vec![
+        serde_json::json!({ "title": "Apple Pie", "instructions": "...", "ingredients": [], "tags": ["dessert"] }),
+        serde_json::json!({ "title": "Banana Bread", "instructions": "...", "ingredients": [], "tags": ["dessert"] }),
+        serde_json::json!({ "title": "Chicken Curry", "instructions": "...", "ingredients": [], "tags": ["dinner"] }),
+    ];
+
+    for recipe in recipes {
+        let _ = reqwest::Client::new()
+            .post(&format!("{}/recipes", base_url))
+            .header("x-test-user", "test@example.com")
+            .json(&recipe)
+            .send()
+            .await
+            .unwrap();
+    }
+
+    // 3. Go to homepage
+    ctx.client.goto(&base_url).await.unwrap();
+
+    // Verify all 3 are there
+    let list_items = ctx
+        .client
+        .find_all(Locator::Css("ul.divide-y li"))
+        .await
+        .unwrap();
+    assert!(list_items.len() >= 3);
+
+    // 4. Type into search box
+    let search_input = ctx.client.find(Locator::Id("search-q")).await.unwrap();
+    search_input.send_keys("Apple").await.unwrap();
+
+    // 5. Wait for debounce (400ms) + HTMX swap
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    // 6. Verify results filtered
+    let list_items = ctx
+        .client
+        .find_all(Locator::Css("ul.divide-y li"))
+        .await
+        .unwrap();
+    assert_eq!(list_items.len(), 1);
+    assert!(list_items[0].text().await.unwrap().contains("Apple Pie"));
+
+    // 7. Verify Focus Retention
+    // Check if search-q is still the active element
+    let active_id = ctx
+        .client
+        .execute("return document.activeElement.id", vec![])
+        .await
+        .unwrap();
+    assert_eq!(active_id.as_str().unwrap(), "search-q");
+
+    // 8. Clear to restore all results
+    // Use JS to ensure events trigger correctly in headless env
+    ctx.client
+        .execute(
+            "const el = document.getElementById('search-q'); el.value = ''; el.dispatchEvent(new Event('input', { bubbles: true }));",
+            vec![],
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    let list_items = ctx
+        .client
+        .find_all(Locator::Css("ul.divide-y li"))
+        .await
+        .unwrap();
+    assert!(list_items.len() >= 3);
+
+    ctx.client.clone().close().await.unwrap();
+}

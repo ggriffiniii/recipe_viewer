@@ -333,3 +333,34 @@ async fn test_multi_tag_search() {
     assert!(body_str.contains("Spicy Taco"));
     assert!(body_str.contains("Mild Burrito"));
 }
+
+#[tokio::test]
+async fn test_live_search() {
+    let app = setup_test_app().await;
+
+    // Search with HTMX headers
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/?q=taco")
+                .header("HX-Request", "true")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let body_str = String::from_utf8(
+        axum::body::to_bytes(response.into_body(), 100_000)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+
+    // Verify that the response contains the expected HTMX targets
+    assert!(body_str.contains("id=\"search-results\""));
+    assert!(body_str.contains("id=\"header-search-wrapper\""));
+    assert!(body_str.contains("hx-swap-oob=\"true\""));
+}
