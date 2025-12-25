@@ -2,3 +2,4 @@
 .env
 .secrets
 recipes.db
+recipe_viewer-x86.tar
