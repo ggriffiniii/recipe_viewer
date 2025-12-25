@@ -479,3 +479,36 @@ async fn test_tag_with_spaces() {
     assert!(body_str.contains("bg-indigo-600 text-white"));
     assert!(body_str.contains("thin crust"));
 }
+
+#[tokio::test]
+async fn test_auth_required_redirect() {
+    let app = setup_test_app().await;
+
+    // 1. Attempt to access a protected page with a query parameter
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/recipes/new?url=http://foo.com")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let body_str = String::from_utf8(
+        axum::body::to_bytes(response.into_body(), 100_000)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+
+    // 2. Verify we see the "Authentication Required" page
+    assert!(body_str.contains("Authentication Required"));
+    assert!(body_str.contains("Sign in with Google"));
+
+    // 3. Verify the link includes the 'next' parameter correctly including query
+    // Askama urlencode filter: encodes ?, =, : but not /
+    assert!(body_str.contains("next=/recipes/new%3Furl%3Dhttp%3A//foo.com"));
+}

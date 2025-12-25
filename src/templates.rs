@@ -87,6 +87,13 @@ pub struct RecipeConvertTemplate {
     pub user: Option<String>,
 }
 
+#[derive(Template)]
+#[template(path = "auth_required.html")]
+pub struct AuthRequiredTemplate {
+    pub user: Option<String>,
+    pub next: Option<String>,
+}
+
 pub struct HtmlTemplate<T>(pub T);
 
 impl<T> IntoResponse for HtmlTemplate<T>

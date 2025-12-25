@@ -21,7 +21,8 @@ pub struct AuthRequest {
 }
 
 use crate::templates::{
-    HtmlTemplate, RecipeConvertTemplate, RecipeDetailTemplate, RecipeListTemplate, RecipeWithTags,
+    AuthRequiredTemplate, HtmlTemplate, RecipeConvertTemplate, RecipeDetailTemplate,
+    RecipeListTemplate, RecipeWithTags,
 };
 use sqlx::SqlitePool;
 
@@ -277,8 +278,13 @@ async fn fetch_revisions(
 pub async fn google_auth(
     State(client): State<OAuthClient>,
     session: Session,
+    Query(params): Query<std::collections::HashMap<String, String>>,
     headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
+    // Store 'next' URL in session if provided
+    if let Some(next) = params.get("next") {
+        session.insert("next_url", next).await.unwrap();
+    }
     // Enforce localhost for Google OAuth to avoid cookie domain mismatches
     if let Some(host) = headers.get("host")
         && let Ok(host_str) = host.to_str()
@@ -619,7 +625,10 @@ pub async fn google_auth_callback(
         .await
         .unwrap();
 
-    Redirect::to("/").into_response()
+    let next_url: Option<String> = session.remove("next_url").await.unwrap_or(None);
+    let redirect_url = next_url.unwrap_or_else(|| "/".to_string());
+
+    Redirect::to(&redirect_url).into_response()
 }
 
 pub async fn logout(session: Session) -> impl IntoResponse {
@@ -711,11 +720,16 @@ fn parse_quantity(s: &str) -> Option<f64> {
 pub async fn create_recipe_form(
     State(pool): State<SqlitePool>,
     session: Session,
+    uri: axum::http::Uri,
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> Result<Response, (axum::http::StatusCode, String)> {
     let user: Option<SessionUser> = session.get("user").await.unwrap_or(None);
     if user.is_none() {
-        return Ok(Redirect::to("/").into_response());
+        return Ok(HtmlTemplate(AuthRequiredTemplate {
+            user: None,
+            next: Some(uri.to_string()),
+        })
+        .into_response());
     }
 
     let all_tags = fetch_all_tags_ordered(&pool)
@@ -833,10 +847,15 @@ pub async fn edit_recipe_form(
     State(pool): State<SqlitePool>,
     Path(id): Path<i64>,
     session: Session,
+    uri: axum::http::Uri,
 ) -> Result<Response, (axum::http::StatusCode, String)> {
     let user: Option<SessionUser> = session.get("user").await.unwrap_or(None);
     if user.is_none() {
-        return Ok(Redirect::to("/").into_response());
+        return Ok(HtmlTemplate(AuthRequiredTemplate {
+            user: None,
+            next: Some(uri.to_string()),
+        })
+        .into_response());
     }
 
     let recipe = sqlx::query_as::<_, crate::models::RecipeWithRevision>(
@@ -1180,10 +1199,15 @@ pub async fn convert_recipe_form(
     State(pool): State<SqlitePool>,
     Path(id): Path<i64>,
     session: Session,
+    uri: axum::http::Uri,
 ) -> Result<Response, (axum::http::StatusCode, String)> {
     let user: Option<SessionUser> = session.get("user").await.unwrap_or(None);
     if user.is_none() {
-        return Ok(Redirect::to("/").into_response());
+        return Ok(HtmlTemplate(AuthRequiredTemplate {
+            user: None,
+            next: Some(uri.to_string()),
+        })
+        .into_response());
     }
 
     // Get recipe to display title etc
