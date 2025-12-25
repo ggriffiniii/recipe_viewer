@@ -4,6 +4,7 @@ use sqlx::{QueryBuilder, Sqlite};
 pub enum Query {
     Term(String),
     Title(String),
+    Ingredient(String),
     Tag(String),
     Rating {
         rater: String,
@@ -29,6 +30,12 @@ impl Query {
                 let val = format!("(?i){}", pattern);
                 query_builder.push_bind(val);
                 query_builder.push(") ");
+            }
+            Query::Ingredient(pattern) => {
+                query_builder.push(" (EXISTS (SELECT 1 FROM ingredients i JOIN revisions rev ON i.revision_id = rev.id WHERE rev.recipe_id = r.id AND i.name REGEXP ");
+                let val = format!("(?i){}", pattern);
+                query_builder.push_bind(val);
+                query_builder.push(")) ");
             }
             Query::Tag(tag) => {
                 query_builder.push(" (EXISTS (SELECT 1 FROM recipe_tags rt JOIN tags t ON rt.tag_id = t.id WHERE rt.recipe_id = r.id AND t.name LIKE ");
@@ -226,6 +233,8 @@ fn parse_field_string(s: &str) -> Query {
         Query::Title(val.to_string())
     } else if let Some(val) = s.strip_prefix("tag:") {
         Query::Tag(val.to_string())
+    } else if let Some(val) = s.strip_prefix("ingredient:") {
+        Query::Ingredient(val.to_string())
     } else {
         let s = s.strip_prefix("rating:").unwrap_or(s);
         // Try to parse rating: name=val, name>val, name<val
@@ -284,6 +293,9 @@ mod tests {
 
         let query = parse("tag:dinner").unwrap();
         assert_eq!(query, Query::Tag("dinner".to_string()));
+
+        let query = parse("ingredient:garlic").unwrap();
+        assert_eq!(query, Query::Ingredient("garlic".to_string()));
     }
 
     #[test]

@@ -161,3 +161,96 @@ async fn test_import_recipe_streaming() {
         panic!("Unexpected number of lines: {}", lines.len());
     }
 }
+
+#[tokio::test]
+async fn test_ingredient_search() {
+    let app = setup_test_app().await;
+
+    // 1. Create a recipe with specific ingredients
+    let payload = serde_json::json!({
+        "title": "Garlic Pasta",
+        "instructions": "Cook pasta, add garlic.",
+        "ingredients": [
+            { "name": "Garlic", "quantity": "2", "unit": "cloves" },
+            { "name": "Pasta", "quantity": "1", "unit": "lb" }
+        ],
+        "tags": []
+    });
+
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/recipes")
+                .header("Content-Type", "application/json")
+                .header("x-test-user", "test@example.com")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // 2. Search for "Garlic" (Match)
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/?q=ingredient:garlic")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let body = axum::body::to_bytes(response.into_body(), 100_000)
+        .await
+        .unwrap();
+    let body_str = String::from_utf8(body.to_vec()).unwrap();
+    assert!(
+        body_str.contains("Garlic Pasta"),
+        "Should find recipe with ingredient 'Garlic'"
+    );
+
+    // 3. Search for "Onion" (No Match)
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/?q=ingredient:onion")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let body = axum::body::to_bytes(response.into_body(), 100_000)
+        .await
+        .unwrap();
+    let body_str = String::from_utf8(body.to_vec()).unwrap();
+    assert!(
+        !body_str.contains("Garlic Pasta"),
+        "Should NOT find recipe with ingredient 'Onion'"
+    );
+
+    // 4. Regex Search "G.*c" (Match)
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/?q=ingredient:g.*c")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let body = axum::body::to_bytes(response.into_body(), 100_000)
+        .await
+        .unwrap();
+    let body_str = String::from_utf8(body.to_vec()).unwrap();
+    assert!(
+        body_str.contains("Garlic Pasta"),
+        "Should find recipe with ingredient regex 'g.*c'"
+    );
+}
