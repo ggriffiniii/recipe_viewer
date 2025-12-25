@@ -15,7 +15,7 @@ async fn main() {
     let google_client_secret =
         env::var("GOOGLE_CLIENT_SECRET").expect("Missing GOOGLE_CLIENT_SECRET");
     let google_redirect_url = env::var("GOOGLE_REDIRECT_URL")
-        .unwrap_or_else(|_| "http://localhost:3000/auth/callback".to_string());
+        .unwrap_or_else(|_| "http://localhost:8080/auth/callback".to_string());
 
     let db_opts = sqlx::sqlite::SqliteConnectOptions::from_str(&database_url)
         .expect("Failed to parse DATABASE_URL")

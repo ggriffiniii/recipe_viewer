@@ -364,3 +364,62 @@ async fn test_live_search() {
     assert!(body_str.contains("id=\"header-search-wrapper\""));
     assert!(body_str.contains("hx-swap-oob=\"true\""));
 }
+
+#[tokio::test]
+async fn test_tag_exact_match() {
+    let app = setup_test_app().await;
+
+    // 1. Create recipes with overlapping tag names
+    let payload1 = serde_json::json!({
+        "title": "Spicy Dish",
+        "instructions": "...",
+        "ingredients": [],
+        "tags": ["spicy"]
+    });
+    let payload2 = serde_json::json!({
+        "title": "Extra Spicy Dish",
+        "instructions": "...",
+        "ingredients": [],
+        "tags": ["spicier"]
+    });
+
+    for p in &[payload1, payload2] {
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/recipes")
+                    .header("Content-Type", "application/json")
+                    .header("x-test-user", "test@example.com")
+                    .body(Body::from(p.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+    }
+
+    // 2. Search for "tag:spicy"
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/?q=tag:spicy")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let body_str = String::from_utf8(
+        axum::body::to_bytes(response.into_body(), 100_000)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+
+    // 3. Verify ONLY "Spicy Dish" matches, NOT "Extra Spicy Dish"
+    assert!(body_str.contains("Spicy Dish"));
+    assert!(!body_str.contains("Extra Spicy Dish"));
+}

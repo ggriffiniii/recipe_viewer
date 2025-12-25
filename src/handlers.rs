@@ -274,7 +274,7 @@ pub async fn google_auth(
         && let Ok(host_str) = host.to_str()
         && host_str.starts_with("127.0.0.1")
     {
-        return Redirect::to("http://localhost:3000/auth/google");
+        return Redirect::to("http://localhost:8080/auth/google");
     }
 
     let (auth_url, csrf_token) = client

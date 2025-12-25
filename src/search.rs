@@ -38,9 +38,8 @@ impl Query {
                 query_builder.push(")) ");
             }
             Query::Tag(tag) => {
-                query_builder.push(" (EXISTS (SELECT 1 FROM recipe_tags rt JOIN tags t ON rt.tag_id = t.id WHERE rt.recipe_id = r.id AND t.name LIKE ");
-                let val = format!("%{}%", tag);
-                query_builder.push_bind(val);
+                query_builder.push(" (EXISTS (SELECT 1 FROM recipe_tags rt JOIN tags t ON rt.tag_id = t.id WHERE rt.recipe_id = r.id AND t.name = ");
+                query_builder.push_bind(tag.clone());
                 query_builder.push(")) ");
             }
             Query::Rating { rater, op, score } => {
