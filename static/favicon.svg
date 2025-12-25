@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- Background rounded square (Indigo 600) -->
+    <rect width="32" height="32" rx="6" fill="#4F46E5"/>
+    
+    <!-- Cooking Pot (Stockpot) Silhouette -->
+    <!-- Main Body -->
+    <path d="M7 14C7 12.8954 7.89543 12 9 12H23C24.1046 12 25 12.8954 25 14V22C25 24.2091 23.2091 26 21 26H11C8.79086 26 7 24.2091 7 22V14Z" fill="white"/>
+    
+    <!-- Left Handle -->
+    <rect x="4" y="15" width="4" height="2" rx="1" fill="white"/>
+    
+    <!-- Right Handle -->
+    <rect x="24" y="15" width="4" height="2" rx="1" fill="white"/>
+    
+    <!-- Lid Handle/Knob -->
+    <rect x="14" y="9" width="4" height="2" rx="1" fill="white"/>
+    
+    <!-- Lid Line (Subtle overlap) -->
+    <rect x="8" y="12" width="16" height="1" fill="#4F46E5" fill-opacity="0.3"/>
+</svg>

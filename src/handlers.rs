@@ -1411,3 +1411,10 @@ mod tests {
         assert_eq!(parse_quantity("1/0"), None);
     }
 }
+pub async fn favicon() -> impl IntoResponse {
+    let bytes = include_bytes!("../static/favicon.svg");
+    (
+        [(axum::http::header::CONTENT_TYPE, "image/svg+xml")],
+        bytes.as_slice(),
+    )
+}

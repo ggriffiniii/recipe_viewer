@@ -59,6 +59,8 @@ pub async fn create_app(pool: SqlitePool, oauth_client: OAuthClient, test_mode: 
         )
         .route("/auth/google", get(handlers::google_auth))
         .route("/auth/callback", get(handlers::google_auth_callback))
+        .route("/favicon.ico", get(handlers::favicon))
+        .route("/favicon.svg", get(handlers::favicon))
         .route("/logout", get(handlers::logout));
 
     let app = if test_mode {
