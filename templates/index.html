@@ -1,31 +1,21 @@
 {% extends "layout.html" %}
 
-{% block content %}
-<div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-    <h1 class="text-3xl font-bold text-gray-800">Recipes</h1>
-
-    <div class="flex items-center gap-4 w-full md:w-auto">
-        <form action="/" method="get" class="relative flex-grow md:flex-grow-0">
-            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"
-                    fill="currentColor">
-                    <path fill-rule="evenodd"
-                        d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-                        clip-rule="evenodd" />
-                </svg>
-            </div>
-            <input type="text" name="q" placeholder="Search recipes..." value="{{ q.as_deref().unwrap_or("") }}"
-                class="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm">
-        </form>
-
-        {% if user.is_some() %}
-        <a href="/recipes/new"
-            class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg shadow transition hover:-translate-y-0.5 pointer-cursor whitespace-nowrap">
-            + New Recipe
-        </a>
-        {% endif %}
+{% block header_search %}
+<form action="/" method="get" class="relative w-full">
+    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+        <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd"
+                d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                clip-rule="evenodd" />
+        </svg>
     </div>
-</div>
+    <!-- Pre-fill global search with 'q' on homepage -->
+    <input type="text" name="q" placeholder="Search recipes..." value="{{ q.as_deref().unwrap_or("") }}"
+        class="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm">
+</form>
+{% endblock %}
+
+{% block content %}
 
 <div class="bg-white shadow overflow-hidden sm:rounded-md">
     <ul class="divide-y divide-gray-200">
