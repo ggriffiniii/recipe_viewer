@@ -37,6 +37,7 @@ pub struct ParsedRecipe {
     pub ingredients: Vec<ParsedIngredient>,
     pub instructions: Option<Vec<String>>,
     pub overview: Option<String>,
+    pub tags: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -84,6 +85,11 @@ pub async fn extract_recipe_from_text(
         "properties": {
             "title": { "type": "STRING", "nullable": true },
             "overview": { "type": "STRING", "nullable": true },
+            "tags": {
+                "type": "ARRAY",
+                "items": { "type": "STRING" },
+                "nullable": true
+            },
             "instructions": {
                 "type": "ARRAY",
                 "items": { "type": "STRING" },

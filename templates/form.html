@@ -445,6 +445,12 @@
                                             instructionsInput.value = data.instructions.join('\n\n');
                                         }
 
+                                        if (data.tags && data.tags.length > 0) {
+                                            data.tags.forEach(tag => {
+                                                addTag(tag);
+                                            });
+                                        }
+
                                         importStatus.textContent = 'Import successful!';
                                         importStatus.classList.remove('text-gray-500');
                                         importStatus.classList.add('text-green-600');
