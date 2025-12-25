@@ -13,11 +13,26 @@
 <body class="bg-gray-100 text-gray-900 font-sans">
     <nav class="bg-white shadow p-3 mb-6">
         <div class="container mx-auto flex flex-row justify-between items-center gap-2 md:gap-4">
+            <!-- Desktop Branding -->
             <a href="/"
                 class="text-xl font-bold text-indigo-600 hover:text-indigo-800 transition whitespace-nowrap hidden md:block">Recipes</a>
 
+            <!-- Mobile Logo/Home Link -->
+            <a href="/" class="md:hidden flex-shrink-0 mr-2 text-indigo-600 hover:text-indigo-800 transition">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="32" height="32" rx="6" fill="currentColor" />
+                    <path
+                        d="M7 14C7 12.8954 7.89543 12 9 12H23C24.1046 12 25 12.8954 25 14V22C25 24.2091 23.2091 26 21 26H11C8.79086 26 7 24.2091 7 22V14Z"
+                        fill="white" />
+                    <rect x="4" y="15" width="4" height="2" rx="1" fill="white" />
+                    <rect x="24" y="15" width="4" height="2" rx="1" fill="white" />
+                    <rect x="14" y="9" width="4" height="2" rx="1" fill="white" />
+                    <rect x="8" y="12" width="16" height="1" fill="currentColor" fill-opacity="0.3" />
+                </svg>
+            </a>
+
             <!-- Global Search Bar -->
-            <div class="flex-grow w-full md:w-auto md:mx-8">
+            <div class="flex-grow md:mx-8">
                 {% block header_search %}
                 <div id="header-search-wrapper" class="w-full">
                     <form action="/" method="get" class="relative w-full">
