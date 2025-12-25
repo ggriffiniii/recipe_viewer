@@ -404,33 +404,56 @@
                             body: JSON.stringify({ url }),
                         });
 
-                        if (!response.ok) {
-                            const errorText = await response.text();
-                            throw new Error(`Import failed: ${response.status} ${response.statusText} - ${errorText}`);
+                        const reader = response.body.getReader();
+                        const decoder = new TextDecoder();
+                        let buffer = '';
+
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+
+                            buffer += decoder.decode(value, { stream: true });
+                            const lines = buffer.split('\n');
+                            // Keep the last partial line in buffer
+                            buffer = lines.pop();
+
+                            for (const line of lines) {
+                                if (!line.trim()) continue;
+                                try {
+                                    const msg = JSON.parse(line);
+                                    if (msg.status === 'info') {
+                                        importStatus.textContent = msg.message;
+                                    } else if (msg.status === 'error') {
+                                        throw new Error(msg.message);
+                                    } else if (msg.status === 'complete') {
+                                        const data = msg.data;
+                                        if (data.title) titleInput.value = data.title;
+                                        if (data.overview) overviewInput.value = data.overview;
+
+                                        if (data.ingredients && data.ingredients.length > 0) {
+                                            ingredientsContainer.innerHTML = '';
+                                            data.ingredients.forEach(ing => {
+                                                const q = ing.quantity || '';
+                                                let u = ing.unit || '';
+                                                if (typeof u === 'string' && u.toLowerCase() === 'null') u = '';
+                                                const n = ing.name || '';
+                                                ingredientsContainer.appendChild(createIngredientRow(q, u, n));
+                                            });
+                                        }
+
+                                        if (data.instructions && data.instructions.length > 0) {
+                                            instructionsInput.value = data.instructions.join('\n\n');
+                                        }
+
+                                        importStatus.textContent = 'Import successful!';
+                                        importStatus.classList.remove('text-gray-500');
+                                        importStatus.classList.add('text-green-600');
+                                    }
+                                } catch (e) {
+                                    console.warn('Failed to parse line:', line, e);
+                                }
+                            }
                         }
-
-                        const data = await response.json();
-                        if (data.title) titleInput.value = data.title;
-                        if (data.overview) overviewInput.value = data.overview;
-
-                        if (data.ingredients && data.ingredients.length > 0) {
-                            ingredientsContainer.innerHTML = '';
-                            data.ingredients.forEach(ing => {
-                                const q = ing.quantity || '';
-                                let u = ing.unit || '';
-                                if (typeof u === 'string' && u.toLowerCase() === 'null') u = '';
-                                const n = ing.name || '';
-                                ingredientsContainer.appendChild(createIngredientRow(q, u, n));
-                            });
-                        }
-
-                        if (data.instructions && data.instructions.length > 0) {
-                            instructionsInput.value = data.instructions.join('\n\n');
-                        }
-
-                        importStatus.textContent = 'Import successful!';
-                        importStatus.classList.remove('text-gray-500');
-                        importStatus.classList.add('text-green-600');
 
                     } catch (error) {
                         console.error('Import error:', error);

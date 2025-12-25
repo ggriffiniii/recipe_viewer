@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
 
+pub const GEMINI_MODEL: &str = "gemini-2.5-flash-lite";
+
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(dead_code)]
 struct GeminiResponse {
@@ -67,8 +69,8 @@ pub async fn extract_recipe_from_text(
     text: &str,
 ) -> Result<ParsedRecipe, GeminiError> {
     let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={}",
-        api_key
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+        GEMINI_MODEL, api_key
     );
 
     let prompt = format!(

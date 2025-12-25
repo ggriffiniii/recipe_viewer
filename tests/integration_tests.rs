@@ -4,6 +4,7 @@ use axum::{
 };
 use oauth2::{AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl, basic::BasicClient};
 use recipe_viewer::create_app;
+use serde_json::Value;
 use sqlx::sqlite::SqlitePoolOptions;
 use tower::ServiceExt;
 
@@ -87,4 +88,76 @@ async fn test_new_recipe_form_prefill() {
     assert!(body_str.contains("https://example.com/pizza"));
     assert!(body_str.contains("id=\"bookmarklet-link\""));
     assert!(body_str.contains("Recipe Importer Bookmarklet"));
+}
+
+#[tokio::test]
+async fn test_import_recipe_streaming() {
+    // This test actually calls the scraper + AI, so it requires dependencies.
+    // We'll use a simple URL to check the protocol steps.
+    let app = setup_test_app().await;
+
+    let payload = serde_json::json!({
+        "url": "https://example.com"
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/recipes/import")
+                .header("Content-Type", "application/json")
+                .header("x-test-user", "test@example.com")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), 100_000)
+        .await
+        .unwrap();
+    let body_str = String::from_utf8(body.to_vec()).unwrap();
+
+    // Parse NDJSON
+    let lines: Vec<&str> = body_str.trim().split('\n').collect();
+    println!("DEBUG received lines: {:?}", lines);
+
+    // 1. First message should always be "Fetching"
+    let msg1: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(msg1["status"], "info");
+    assert!(
+        msg1["message"]
+            .as_str()
+            .unwrap()
+            .contains("Fetching content")
+    );
+
+    if lines.len() == 2 {
+        // Case: Failed early (e.g. Missing API Key or Scraping Failed)
+        let msg2: Value = serde_json::from_str(lines[1]).unwrap();
+        assert_eq!(msg2["status"], "error");
+        // Verify it's a valid JSON structure we expect
+    } else if lines.len() >= 3 {
+        // Case: Scraping succeeded, attempted extraction
+
+        // 2. Extracting
+        let msg2: Value = serde_json::from_str(lines[1]).unwrap();
+        assert_eq!(msg2["status"], "info");
+        assert!(
+            msg2["message"]
+                .as_str()
+                .unwrap()
+                .contains("Extracting recipe information")
+        );
+        // Check for model name presence if extraction started
+        assert!(msg2["message"].as_str().unwrap().contains("gemini"));
+
+        // 3. Complete or Error
+        let msg3: Value = serde_json::from_str(lines.last().unwrap()).unwrap();
+        assert!(msg3["status"] == "complete" || msg3["status"] == "error");
+    } else {
+        panic!("Unexpected number of lines: {}", lines.len());
+    }
 }

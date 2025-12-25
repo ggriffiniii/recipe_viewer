@@ -1,5 +1,6 @@
 use crate::state::OAuthClient;
 use axum::{
+    body::Body,
     extract::{Form, Json, Query, State},
     response::{IntoResponse, Redirect, Response},
 };
@@ -127,38 +128,61 @@ pub struct ImportRequest {
     pub url: String,
 }
 
-pub async fn import_recipe(
-    Json(payload): Json<ImportRequest>,
-) -> Result<impl IntoResponse, (axum::http::StatusCode, String)> {
-    let api_key = std::env::var("GEMINI_API_KEY").map_err(|_| {
-        (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            "GEMINI_API_KEY not set".to_string(),
-        )
-    })?;
+pub async fn import_recipe(Json(payload): Json<ImportRequest>) -> impl IntoResponse {
+    let stream = async_stream::stream! {
+        // Yield 1: Fetching
+        yield Ok::<_, String>(r#"{"status": "info", "message": "Fetching content from URL..."}"#.to_string() + "\n");
 
-    // Use the extracted scraper logic
-    let text = crate::scraper::scrape_url(&payload.url)
-        .await
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        let api_key_res = std::env::var("GEMINI_API_KEY");
+        if let Err(_) = api_key_res {
+             yield Ok(r#"{"status": "error", "message": "GEMINI_API_KEY not set"}"#.to_string() + "\n");
+             return;
+        }
+        let api_key = api_key_res.unwrap();
 
-    // Truncate
-    let truncated_text = if text.len() > 50_000 {
-        &text[..50_000]
-    } else {
-        &text
+        // Perform Scrape
+        let scrape_res = crate::scraper::scrape_url(&payload.url).await;
+        match scrape_res {
+            Ok(text) => {
+                 // Yield 2: Extracting
+                 yield Ok(format!(r#"{{"status": "info", "message": "Extracting recipe information with {}..."}}"#, crate::ai::GEMINI_MODEL) + "\n");
+
+                 // Perform Extraction
+                 // TODO: We need truncated_text logic here again
+                let truncated_text = if text.len() > 50_000 {
+                    &text[..50_000]
+                } else {
+                    &text
+                };
+
+                 let client_http = reqwest::Client::new();
+                 let parsed_res = crate::ai::extract_recipe_from_text(&client_http, &api_key, truncated_text).await;
+
+                 match parsed_res {
+                     Ok(parsed) => {
+                         // Yield 3: Complete
+                         // Serialize parsed recipe to string
+                         if let Ok(json_str) = serde_json::to_string(&parsed) {
+                              let msg = format!(r#"{{"status": "complete", "data": {}}}"#, json_str);
+                              yield Ok(msg + "\n");
+                         } else {
+                              yield Ok(r#"{"status": "error", "message": "Failed to serialize recipe"}"#.to_string() + "\n");
+                         }
+                     },
+                     Err(e) => {
+                         let err_msg = format!(r#"{{"status": "error", "message": "AI extraction failed: {}"}}"#, e);
+                         yield Ok(err_msg + "\n");
+                     }
+                 }
+            },
+            Err(e) => {
+                let err_msg = format!(r#"{{"status": "error", "message": "Scraping failed: {}"}}"#, e);
+                yield Ok(err_msg + "\n");
+            }
+        }
     };
 
-    let client_http = reqwest::Client::new();
-    let parsed = crate::ai::extract_recipe_from_text(&client_http, &api_key, truncated_text)
-        .await
-        .map_err(|e| {
-            let msg = format!("AI extraction failed: {}", e);
-            eprintln!("{}", msg);
-            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, msg)
-        })?;
-
-    Ok(Json(parsed))
+    Body::from_stream(stream)
 }
 
 async fn fetch_all_tags_ordered(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
