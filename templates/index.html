@@ -16,56 +16,101 @@
 {% endblock %}
 
 {% block content %}
+<div class="flex flex-col md:flex-row gap-6">
+    <!-- Sidebar (Desktop: Left Column, Mobile: Top Scrollable) -->
+    <aside class="w-full md:w-64 flex-shrink-0">
+        <div class="flex items-center justify-between mb-3 px-1">
+            <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Popular Tags</h3>
+            {% if !active_tags.is_empty() %}
+            <a href="{{ clear_url }}" class="text-xs font-medium text-indigo-600 hover:text-indigo-500">Clear</a>
+            {% endif %}
+        </div>
 
-<div class="bg-white shadow overflow-hidden sm:rounded-md">
-    <ul class="divide-y divide-gray-200">
-        {% for item in recipes %}
-        <li>
-            <a href="/recipes/{{ item.recipe.id }}" class="block hover:bg-gray-50 transition duration-150 ease-in-out">
-                <div class="px-4 py-4 md:px-6 flex items-start md:items-center justify-between">
-                    <!-- Main Content Wrapper: Column on mobile, Row on desktop -->
-                    <div
-                        class="flex-1 min-w-0 flex flex-col md:flex-row md:items-center md:justify-between gap-y-2 md:gap-x-4">
+        <!-- Mobile: Horizontal Scroll -->
+        <div class="md:hidden overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
+            <div class="flex gap-2">
+                {% for item in tag_links %}
+                {% let tag_name = item.0 %}
+                {% let toggle_url = item.1 %}
+                <a href="{{ toggle_url }}"
+                    class="inline-block px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap
+                   {% if active_tags.contains(tag_name) %}bg-indigo-600 text-white shadow-sm{% else %}bg-white text-gray-700 hover:bg-gray-50 border border-gray-200{% endif %}">
+                    {{ tag_name }}
+                </a>
+                {% endfor %}
+            </div>
+        </div>
 
-                        <!-- Title (Truncated) -->
-                        <div class="min-w-0">
-                            <div class="text-sm font-medium text-indigo-600 truncate">{{ item.recipe.title }}</div>
+        <!-- Desktop: Wrapped Badges -->
+        <div class="hidden md:block">
+            <div class="flex flex-wrap gap-2">
+                {% for item in tag_links %}
+                {% let tag_name = item.0 %}
+                {% let toggle_url = item.1 %}
+                <a href="{{ toggle_url }}"
+                    class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium transition-colors border
+                   {% if active_tags.contains(tag_name) %}bg-indigo-600 text-white border-transparent shadow-sm{% else %}bg-white text-gray-700 hover:bg-gray-50 border-gray-200{% endif %}">
+                    {{ tag_name }}
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="flex-grow min-w-0">
+        <div class="bg-white shadow overflow-hidden sm:rounded-md">
+            <ul class="divide-y divide-gray-200">
+                {% for item in recipes %}
+                <li>
+                    <a href="/recipes/{{ item.recipe.id }}"
+                        class="block hover:bg-gray-50 transition duration-150 ease-in-out">
+                        <div class="px-4 py-4 md:px-6 flex items-start md:items-center justify-between">
+                            <!-- Main Content Wrapper: Column on mobile, Row on desktop -->
+                            <div
+                                class="flex-1 min-w-0 flex flex-col md:flex-row md:items-center md:justify-between gap-y-2 md:gap-x-4">
+
+                                <!-- Title (Truncated) -->
+                                <div class="min-w-0">
+                                    <div class="text-sm font-medium text-indigo-600 truncate">{{ item.recipe.title }}
+                                    </div>
+                                </div>
+
+                                <!-- Metadata (Ratings + Tags) -->
+                                <div class="flex flex-wrap gap-2 items-center">
+                                    <!-- Ratings First -->
+                                    {% for rating in item.ratings %}
+                                    <span
+                                        class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-200">
+                                        {{ rating.rater_name.chars().next().unwrap_or('?') }} {{ rating.score }}★
+                                    </span>
+                                    {% endfor %}
+
+                                    <!-- Tags Second -->
+                                    {% for tag in item.tags %}
+                                    <span
+                                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                        {{ tag.name }}
+                                    </span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+
+                            <!-- Chevron -->
+                            <div class="ml-4 flex-shrink-0 self-center">
+                                <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                    <path fill-rule="evenodd"
+                                        d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                                        clip-rule="evenodd" />
+                                </svg>
+                            </div>
                         </div>
-
-                        <!-- Metadata (Ratings + Tags) -->
-                        <!-- Displays below title on mobile, to the right on desktop -->
-                        <div class="flex flex-wrap gap-2 items-center">
-                            <!-- Ratings First -->
-                            {% for rating in item.ratings %}
-                            <span
-                                class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-200">
-                                {{ rating.rater_name.chars().next().unwrap_or('?') }} {{ rating.score }}★
-                            </span>
-                            {% endfor %}
-
-                            <!-- Tags Second -->
-                            {% for tag in item.tags %}
-                            <span
-                                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                {{ tag.name }}
-                            </span>
-                            {% endfor %}
-                        </div>
-                    </div>
-
-                    <!-- Chevron -->
-                    <div class="ml-4 flex-shrink-0 self-center">
-                        <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"
-                            fill="currentColor" aria-hidden="true">
-                            <path fill-rule="evenodd"
-                                d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                                clip-rule="evenodd" />
-                        </svg>
-                    </div>
-                </div>
-            </a>
-        </li>
-        {% endfor %}
-    </ul>
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
 </div>
 {% endblock %}

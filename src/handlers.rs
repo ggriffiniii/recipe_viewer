@@ -115,10 +115,63 @@ pub async fn list_recipes(
     let user: Option<SessionUser> = session.get("user").await.unwrap_or(None);
     let user_email = user.map(|u| u.email);
 
+    let all_tags = fetch_all_tags_ordered(&pool)
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let popular_tags = all_tags.into_iter().take(50).collect::<Vec<String>>();
+
+    // Extract current tags from the query string
+    let mut active_tags = Vec::new();
+    if let Some(ref q) = search.q {
+        // Simple extraction: look for tag:NAME
+        // This is a bit coarse but works for the current OR pattern we'll generate
+        for part in q.split(" OR ") {
+            let part = part
+                .trim()
+                .strip_prefix('(')
+                .unwrap_or(part)
+                .strip_suffix(')')
+                .unwrap_or(part);
+            if let Some(tag) = part.strip_prefix("tag:") {
+                active_tags.push(tag.to_string());
+            }
+        }
+    }
+
+    // Build toggle links for each popular tag
+    let mut tag_links = Vec::new();
+    for tag in &popular_tags {
+        let mut new_tags = active_tags.clone();
+        if let Some(pos) = new_tags.iter().position(|t| t == tag) {
+            new_tags.remove(pos);
+        } else {
+            new_tags.push(tag.clone());
+        }
+
+        let toggle_url = if new_tags.is_empty() {
+            "/?q=".to_string()
+        } else {
+            let q_param = new_tags
+                .iter()
+                .map(|t| format!("tag:{}", t))
+                .collect::<Vec<_>>()
+                .join(" OR ");
+            format!("/?q={}", urlencoding::encode(&q_param))
+        };
+        tag_links.push((tag.clone(), toggle_url));
+    }
+
+    let clear_url = "/?q=".to_string();
+
     Ok(HtmlTemplate(RecipeListTemplate {
         recipes: recipes_with_tags,
         user: user_email,
         q: search.q,
+        popular_tags,
+        active_tags,
+        tag_links,
+        clear_url,
     })
     .into_response())
 }

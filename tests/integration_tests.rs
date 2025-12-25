@@ -254,3 +254,82 @@ async fn test_ingredient_search() {
         "Should find recipe with ingredient regex 'g.*c'"
     );
 }
+
+#[tokio::test]
+async fn test_multi_tag_search() {
+    let app = setup_test_app().await;
+
+    // 1. Create two recipes with different tags
+    let payload1 = serde_json::json!({
+        "title": "Spicy Taco",
+        "instructions": "Make tacos.",
+        "ingredients": [],
+        "tags": ["mexican", "spicy"]
+    });
+    let payload2 = serde_json::json!({
+        "title": "Mild Burrito",
+        "instructions": "Make burritos.",
+        "ingredients": [],
+        "tags": ["mexican", "mild"]
+    });
+
+    for p in &[payload1, payload2] {
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/recipes")
+                    .header("Content-Type", "application/json")
+                    .header("x-test-user", "test@example.com")
+                    .body(Body::from(p.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+    }
+
+    // 2. Search for one tag
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/?q=tag:spicy")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body_str = String::from_utf8(
+        axum::body::to_bytes(response.into_body(), 100_000)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(body_str.contains("Spicy Taco"));
+    assert!(!body_str.contains("Mild Burrito"));
+
+    // 3. Search for OR'd tags
+    // The handler expects "?q=tag:spicy OR tag:mild"
+    let q = urlencoding::encode("tag:spicy OR tag:mild");
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(&format!("/?q={}", q))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body_str = String::from_utf8(
+        axum::body::to_bytes(response.into_body(), 100_000)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(body_str.contains("Spicy Taco"));
+    assert!(body_str.contains("Mild Burrito"));
+}

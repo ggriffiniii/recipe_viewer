@@ -25,6 +25,10 @@ pub struct RecipeListTemplate {
     pub recipes: Vec<RecipeWithTags>,
     pub user: Option<String>,
     pub q: Option<String>,
+    pub popular_tags: Vec<String>,
+    pub active_tags: Vec<String>,
+    pub tag_links: Vec<(String, String)>, // (tag_name, toggle_url)
+    pub clear_url: String,
 }
 
 #[derive(Template)]
