@@ -88,6 +88,14 @@ pub struct RecipeConvertTemplate {
 }
 
 #[derive(Template)]
+#[template(path = "print.html")]
+pub struct RecipePrintTemplate {
+    pub recipe: RecipeWithRevision,
+    pub ingredients: Vec<crate::models::Ingredient>,
+    pub scale: f64,
+}
+
+#[derive(Template)]
 #[template(path = "auth_required.html")]
 pub struct AuthRequiredTemplate {
     pub user: Option<String>,

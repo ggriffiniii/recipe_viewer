@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ recipe.title }} - Print View</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @media print {
+            @page { margin: 0.5cm; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body class="bg-white text-gray-900 font-sans p-8 max-w-4xl mx-auto">
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold mb-2">{{ recipe.title }}</h1>
+        {% if let Some(url) = recipe.url %}
+        <div class="text-sm text-gray-500 mb-4">{{ url }}</div>
+        {% endif %}
+        
+        {% if let Some(overview) = recipe.overview %}
+        <p class="text-gray-700 italic border-l-4 border-gray-200 pl-4 py-1">{{ overview }}</p>
+        {% endif %}
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div class="md:col-span-1">
+            <h2 class="text-xl font-semibold border-b border-gray-300 pb-2 mb-4">Ingredients</h2>
+            <ul class="space-y-2 text-sm">
+                {% for ingredient in ingredients %}
+                <li class="flex items-start">
+                    <span class="font-bold mr-2 w-16 text-right flex-shrink-0">
+                        {% if let Some(qty) = ingredient.display_quantity(*scale) %}
+                        {{ qty }}
+                        {% endif %}
+                        {% if let Some(unit) = ingredient.unit %}
+                            {% if let Some(q) = ingredient.quantity %}
+                                {{ unit }}
+                            {% else %}
+                                {{ unit }}
+                            {% endif %}
+                        {% endif %}
+                    </span>
+                    <span>{{ ingredient.name }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <div class="md:col-span-2">
+            <h2 class="text-xl font-semibold border-b border-gray-300 pb-2 mb-4">Instructions</h2>
+            {% if let Some(instructions) = recipe.instructions %}
+            <div class="prose prose-sm max-w-none text-gray-800 whitespace-pre-wrap">
+{{ instructions }}
+            </div>
+            {% else %}
+            <p class="text-gray-500 italic">No instructions provided.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="mt-12 pt-4 border-t border-gray-200 text-center text-xs text-gray-400 no-print">
+        <button onclick="window.print()" class="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-700 transition">
+            Print this page
+        </button>
+    </div>
+</body>
+</html>

@@ -42,6 +42,7 @@ pub async fn create_app(pool: SqlitePool, oauth_client: OAuthClient, test_mode: 
                 .post(handlers::update_recipe)
                 .delete(handlers::delete_recipe),
         )
+        .route("/recipes/{id}/print", get(handlers::recipe_print_view))
         .route(
             "/recipes/{id}/versions/{version}",
             get(handlers::recipe_revision_detail),

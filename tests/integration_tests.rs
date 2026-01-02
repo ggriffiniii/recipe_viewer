@@ -512,3 +512,69 @@ async fn test_auth_required_redirect() {
     // Askama urlencode filter: encodes ?, =, : but not /
     assert!(body_str.contains("next=/recipes/new%3Furl%3Dhttp%3A//foo.com"));
 }
+
+#[tokio::test]
+async fn test_print_view() {
+    let app = setup_test_app().await;
+
+    // 1. Create a recipe
+    let payload = serde_json::json!({
+        "title": "Printable Recipe",
+        "instructions": "Step 1. Print it.",
+        "ingredients": [
+            { "name": "Paper", "quantity": "1", "unit": "sheet" }
+        ],
+        "tags": []
+    });
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/recipes")
+                .header("Content-Type", "application/json")
+                .header("x-test-user", "test@example.com")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Get the ID from the location header or just assume it's 1 since it's a fresh DB
+    let location = create_response
+        .headers()
+        .get("location")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    // location is like /recipes/1
+    let recipe_id = location.split('/').last().unwrap();
+
+    // 2. Request print view
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(&format!("/recipes/{}/print", recipe_id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), 100_000)
+        .await
+        .unwrap();
+    let body_str = String::from_utf8(body.to_vec()).unwrap();
+
+    // 3. Verify content
+    assert!(body_str.contains("Printable Recipe"));
+    assert!(body_str.contains("Print View")); // Title tag
+    assert!(body_str.contains("Paper"));
+    assert!(body_str.contains("Step 1. Print it."));
+    // Ensure minimal branding (no nav)
+    assert!(!body_str.contains("<nav"));
+}

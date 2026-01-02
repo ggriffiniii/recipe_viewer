@@ -472,6 +472,55 @@ pub async fn recipe_revision_detail(
     })
 }
 
+pub async fn recipe_print_view(
+    State(pool): State<SqlitePool>,
+    Path(id): Path<i64>,
+    Query(params): Query<RecipeScale>,
+) -> Result<Response, (axum::http::StatusCode, String)> {
+    let recipe = sqlx::query_as::<_, crate::models::RecipeWithRevision>(
+        r#"
+        SELECT r.id, rev.id as revision_id, rev.revision_number, rev.title, rev.instructions, rev.url, rev.overview, r.created_at, rev.created_at as revision_created_at
+        FROM recipes r
+        JOIN revisions rev ON r.id = rev.recipe_id
+        WHERE r.id = ? AND rev.id = (
+            SELECT MAX(id) FROM revisions WHERE recipe_id = r.id
+        )
+        "#
+    )
+        .bind(id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(match recipe {
+        Some(recipe) => {
+            let ingredients = sqlx::query_as::<_, crate::models::Ingredient>(
+                "SELECT * FROM ingredients WHERE revision_id = ?",
+            )
+            .bind(recipe.revision_id)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+            let scale = params.scale.unwrap_or(1.0);
+
+            // We use RecipePrintTemplate here
+            use crate::templates::RecipePrintTemplate;
+
+            (
+                axum::http::StatusCode::OK,
+                HtmlTemplate(RecipePrintTemplate {
+                    recipe,
+                    ingredients,
+                    scale,
+                }),
+            )
+                .into_response()
+        }
+        None => (axum::http::StatusCode::NOT_FOUND, "Recipe not found").into_response(),
+    })
+}
+
 pub async fn restore_recipe_revision(
     State(pool): State<SqlitePool>,
     Path((id, revision_number)): Path<(i64, i64)>,
