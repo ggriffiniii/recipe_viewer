@@ -187,43 +187,39 @@
                 {% for name in ["Glenn", "Carol", "Mackenzie"] %}
                 <div class="bg-gray-50 p-4 rounded-lg">
                     <div class="font-medium text-gray-900 mb-2">{{ name }}</div>
-                    <div class="flex items-center space-x-1 rating-container" data-rater="{{ name }}">
-                        {% let current_score = 0 %}
+                    <div class="flex items-center space-x-2 rating-container" data-rater="{{ name }}">
+                        {% let current_score = 0.0 %}
                         {% for r in ratings %}
                         {% if r.rater_name.eq_ignore_ascii_case(name) %}
                         {% let current_score = r.score %}
                         {% endif %}
                         {% endfor %}
 
-                        {# Logic to find score is tricky in pure Jinja loop scope, so we use JS for interactivity
-                        mainly,
-                        but for server-side rendering we need to find the rating.
-                        Askama variable scoping is limited. A better way: filter in Rust or use JS to set explicit
-                        state.
-                        Actually, efficient standard approach: define a var. But reassignment in loop is hard.
-                        Workaround: Render dataset attribute on container, let JS highlight.
-                        OR: Use a helper method or improved data structure map.
-                        Given limitations, I'll pass ratings as a Map or just find it in JS if array is small?
-                        Array is small. I'll pass simple list and formatting logic.
-                        Wait, Askama doesn't support assignment easily.
-                        I will render the score in a hidden attribute and use JS to init the stars.
-                        #}
+                        <!-- Gradients for stars -->
+                        <svg width="0" height="0" class="absolute pointer-events-none">
+                            <defs>
+                                <linearGradient id="half-gradient-{{ name }}-{{ recipe.id }}" x1="0%" y1="0%" x2="100%"
+                                    y2="0%">
+                                    <stop offset="50%" class="stop-color-yellow" stop-color="#FBBF24" />
+                                    <stop offset="50%" class="stop-color-gray" stop-color="#D1D5DB" />
+                                </linearGradient>
+                            </defs>
+                        </svg>
 
-                        {% let score = 0 %}
-                        {% for r in ratings %}
-                        {% if r.rater_name.to_lowercase() == name.to_lowercase() %}
-                        {% let score = r.score %}
-                        {# This assignment won't leak out of scope in some engines. In Askama it might not work as
-                        expected if `let` shadows.
-                        Actually, simple solution: render all ratings to a JS object and init. #}
-                        {% endif %}
-                        {% endfor %}
-
-                        {% for i in [1, 2, 3, 4, 5] %}
-                        <button type="button" class="rating-star focus:outline-none text-2xl" data-value="{{ i }}">
-                            ☆
-                        </button>
-                        {% endfor %}
+                        <div class="stars-wrapper flex cursor-pointer">
+                            {% for i in [1, 2, 3, 4, 5] %}
+                            <!-- Star SVG -->
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
+                                class="w-10 h-10 rating-star text-gray-300 transition-colors" data-value="{{ i }}">
+                                <path fill-rule="evenodd"
+                                    d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z"
+                                    clip-rule="evenodd" />
+                            </svg>
+                            {% endfor %}
+                        </div>
+                        <input type="number"
+                            class="bg-transparent border-none focus:ring-0 p-0 text-xs text-gray-400 w-8 text-right rating-input"
+                            step="0.5" min="0" max="5" readonly tabindex="-1">
                     </div>
                 </div>
                 {% endfor %}
@@ -233,7 +229,7 @@
                     try {
                         const ratingsList = [
                             {% for r in ratings %}
-                            { name: "{{ r.rater_name }}", score: Number({{ r.score }})
+                            { name: "{{ r.rater_name }}", score: parseFloat({{ r.score }})
                 },
                     {% endfor %}
                         ];
@@ -250,60 +246,75 @@
                 containers.forEach(container => {
                     try {
                         const rater = container.dataset.rater;
+                        // Unique ID for gradient reference
+                        const gradientId = `half-gradient-${rater}-{{ recipe.id }}`;
+
                         const score = ratingsMap[rater.toLowerCase()] || 0;
-                        updateStars(container, score);
 
+                        const input = container.querySelector('.rating-input');
                         const stars = container.querySelectorAll('.rating-star');
-                        stars.forEach(star => {
-                            star.addEventListener('click', () => {
-                                try {
-                                    const val = parseInt(star.dataset.value);
-                                    // If clicking the current score, toggle to 0 (delete)
-                                    // We need to fetch current visual state or store it better.
-                                    // Actually, let's just use the ratingsMap which stores the initial state,
-                                    // but we need the *current* state after updates.
-                                    // Let's attach current score to container dataset for easier access.
-                                    const currentScore = parseInt(container.dataset.currentScore || 0);
-                                    const newScore = (val === currentScore) ? 0 : val;
 
-                                    saveRating(rater, newScore);
-                                    updateStars(container, newScore);
-                                } catch (e) {
-                                    console.error("Error clicking star", e);
+                        // Init
+                        input.value = score > 0 ? score.toFixed(1) : '';
+                        updateStars(stars, score, gradientId);
+
+                        // Star click/touch logic
+                        stars.forEach((star, index) => {
+                            star.addEventListener('click', (e) => {
+                                const starIndex = index + 1;
+                                const currentVal = parseFloat(input.value) || 0;
+                                let newScore = starIndex;
+
+                                // 3-Step Toggle Logic: Full -> Half -> Clear
+                                if (currentVal === starIndex) {
+                                    // Ensure float comparison is safe (it is for .5 and .0)
+                                    newScore = starIndex - 0.5;
+                                } else if (currentVal === starIndex - 0.5) {
+                                    newScore = 0;
                                 }
+
+                                input.value = newScore > 0 ? newScore.toFixed(1) : '';
+                                saveRating(rater, newScore);
+                                updateStars(stars, newScore, gradientId);
                             });
                         });
+
                     } catch (e) {
                         console.error("Error processing container", container, e);
                     }
                 });
 
-                function updateStars(container, score) {
-                    container.dataset.currentScore = score;
-                    const stars = container.querySelectorAll('.rating-star');
-                    stars.forEach(star => {
-                        const val = parseInt(star.dataset.value);
-                        if (isNaN(val)) return;
 
-                        const isFilled = val <= score;
-                        star.textContent = isFilled ? '★' : '☆';
+                function updateStars(stars, score, gradientId) {
+                    stars.forEach((star, index) => {
+                        const starVal = index + 1; // 1, 2, 3, 4, 5
 
-                        if (isFilled) {
+                        // Reset classes/styles
+                        star.classList.remove('text-yellow-400', 'text-gray-300');
+                        star.style.fill = ''; // Reset inline fill style
+
+                        if (score >= starVal) {
+                            // Full star
                             star.classList.add('text-yellow-400');
-                            star.classList.remove('text-gray-300');
+                        } else if (score >= starVal - 0.5) {
+                            // Half star
+                            // We need to apply the gradient or a partial fill
+                            // SVG linear gradient approach
+                            star.classList.add('text-yellow-400'); // text color might ignore if fill is set?
+                            // Actually text-yellow-400 usually sets fill via currentColor.
+                            // To use gradient, we must set fill explicitly.
+                            star.style.fill = `url(#${gradientId})`;
                         } else {
-                            star.classList.remove('text-yellow-400');
+                            // Empty star
                             star.classList.add('text-gray-300');
                         }
                     });
-                }
-
-                function saveRating(rater, score) {
+                } function saveRating(rater, score) {
                     const params = new URLSearchParams();
                     params.append('rater_name', rater);
                     params.append('score', score);
 
-                    fetch('/recipes/{{ recipe.id }}/ratings', {
+                    fetch(`/recipes/{{ recipe.id }}/ratings`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/x-www-form-urlencoded',
@@ -314,6 +325,7 @@
                     })
                         .catch(err => console.error('Error saving rating:', err));
                 }
+
                     } catch (e) {
                     console.error("Global ratings script error", e);
                 }

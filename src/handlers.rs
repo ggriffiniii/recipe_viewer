@@ -1131,7 +1131,7 @@ pub async fn delete_recipe(
 #[derive(Deserialize)]
 pub struct RatingForm {
     rater_name: String,
-    score: i64,
+    score: f64,
 }
 
 pub async fn update_rating(
@@ -1139,7 +1139,7 @@ pub async fn update_rating(
     Path(id): Path<i64>,
     Form(form): Form<RatingForm>,
 ) -> Result<impl IntoResponse, (axum::http::StatusCode, String)> {
-    if form.score == 0 {
+    if form.score < 0.1 {
         sqlx::query("DELETE FROM ratings WHERE recipe_id = ? AND rater_name = ?")
             .bind(id)
             .bind(form.rater_name)

@@ -578,3 +578,75 @@ async fn test_print_view() {
     // Ensure minimal branding (no nav)
     assert!(!body_str.contains("<nav"));
 }
+#[tokio::test]
+async fn test_fractional_rating() {
+    let app = setup_test_app().await;
+
+    // 1. Create a recipe
+    let payload = serde_json::json!({
+        "title": "Rated Recipe",
+        "instructions": "Rate me.",
+        "ingredients": [],
+        "tags": []
+    });
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/recipes")
+                .header("Content-Type", "application/json")
+                .header("x-test-user", "test@example.com")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let location = create_response
+        .headers()
+        .get("location")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    let recipe_id = location.split('/').last().unwrap();
+
+    // 2. Submit a fractional rating "4.5"
+    let rating_payload = "rater_name=Glenn&score=4.5";
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(&format!("/recipes/{}/ratings", recipe_id))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .body(Body::from(rating_payload))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // 3. Verify page contains the rating
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(&format!("/recipes/{}", recipe_id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let body = axum::body::to_bytes(response.into_body(), 100_000)
+        .await
+        .unwrap();
+    let body_str = String::from_utf8(body.to_vec()).unwrap();
+
+    // We look for the JSON data embedded in the script for reliability
+    // { name: "Glenn", score: parseFloat(4.5) }
+    assert!(body_str.contains("parseFloat(4.5)"));
+}

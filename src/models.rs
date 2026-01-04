@@ -112,5 +112,5 @@ pub struct Rating {
     pub id: i64,
     pub recipe_id: i64,
     pub rater_name: String,
-    pub score: i64,
+    pub score: f64,
 }
